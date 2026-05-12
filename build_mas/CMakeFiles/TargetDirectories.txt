@@ -1,0 +1,3 @@
+C:/Users/HP/AndroidStudioProjects/SmartFactoryMAS2/build_mas/CMakeFiles/core_engine.dir
+C:/Users/HP/AndroidStudioProjects/SmartFactoryMAS2/build_mas/CMakeFiles/edit_cache.dir
+C:/Users/HP/AndroidStudioProjects/SmartFactoryMAS2/build_mas/CMakeFiles/rebuild_cache.dir
