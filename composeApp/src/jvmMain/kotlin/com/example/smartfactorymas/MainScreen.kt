@@ -50,6 +50,7 @@ fun MainScreen() {
     var selectedProposal by remember { mutableStateOf(0) }
 
     fun buildEngineInput(): EngineInput = EngineInput(
+        strategy = strategy,
         alertTime = anomalyTime.toDouble(),
         schedulingStart = 24.0,
         w1 = w1.toDouble(),
@@ -192,6 +193,7 @@ fun MainScreen() {
 
                     GanttChart(
                         state = ganttState,
+                        anomalyTimeInput = anomalyTime,
                         onPreviousStep = {},
                         onNextStep = {},
                         isAutoRunning = isAutoRunning,

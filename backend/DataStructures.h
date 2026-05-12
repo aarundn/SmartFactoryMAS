@@ -9,6 +9,12 @@
 
 struct TimeInterval { double start, end; };
 
+struct DiagnosticResult {
+    std::string status;
+    FuzzyNumber estimatedRUL;
+    std::string requiredCompetence;
+};
+
 struct ProductionJob {
     std::string id;
     double duration;   // p_i

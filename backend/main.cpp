@@ -22,7 +22,7 @@
 
 // Tries to read JSON config from stdin; returns false if empty
 bool tryReadConfig(
-    double& alertTime, double& schedulingStart, double& w1, double& w2,
+    double& alertTime, double& schedulingStart, double& w1, double& w2, std::string& strategy,
     std::vector<ProductionJob>& jobs,
     std::vector<TBMBlock>& tbmBlocks,
     std::vector<ARH>& arhList);
@@ -33,6 +33,7 @@ int main() {
     double alertTime = 8.0;
     double schedulingStart = 24.0;  // After P4 finishes
     double w1 = 0.75, w2 = 0.25;
+    std::string strategy = "SOM"; // Default strategy
 
     // Production jobs remaining after P4 (Table 4.1)
     std::vector<ProductionJob> jobs = {
@@ -54,24 +55,26 @@ int main() {
     arh1.id = "ARH_1";
     arh1.availabilities = {{24.0, 50.0}};
     arh1.repairDuration = FuzzyNumber(4.0, 7.0, 9.0);
+    arh1.competencies = {"Mechanical", "Electrical"};
     arhList.push_back(arh1);
 
     ARH arh2;
     arh2.id = "ARH_2";
     arh2.availabilities = {{103.0, 140.0}};
     arh2.repairDuration = FuzzyNumber(3.0, 6.0, 9.0);
+    arh2.competencies = {"Mechanical"};
     arhList.push_back(arh2);
 
     // ── Try to read dynamic config from stdin ────────────────────────────
     // (Override defaults if Kotlin UI sends JSON input)
-    tryReadConfig(alertTime, schedulingStart, w1, w2, jobs, tbmBlocks, arhList);
+    tryReadConfig(alertTime, schedulingStart, w1, w2, strategy, jobs, tbmBlocks, arhList);
 
     // ── Create agents and run protocol ───────────────────────────────────
     AMC amc;
     ASRH asrh(arhList);
     AMS ams(&amc, &asrh, alertTime, w1, w2);
 
-    ams.handleAnomaly(schedulingStart, jobs, tbmBlocks);
+    ams.handleAnomaly(schedulingStart, jobs, tbmBlocks, strategy);
 
     return 0;
 }
@@ -123,7 +126,7 @@ static std::vector<std::string> splitArray(const std::string& json, const std::s
 }
 
 bool tryReadConfig(
-    double& alertTime, double& schedulingStart, double& w1, double& w2,
+    double& alertTime, double& schedulingStart, double& w1, double& w2, std::string& strategy,
     std::vector<ProductionJob>& jobs,
     std::vector<TBMBlock>& tbmBlocks,
     std::vector<ARH>& arhList)
@@ -149,6 +152,8 @@ bool tryReadConfig(
     v = getNum(input, "scheduling_start"); if (v >= 0) schedulingStart = v;
     v = getNum(input, "w1");             if (v >= 0) w1 = v;
     v = getNum(input, "w2");             if (v >= 0) w2 = v;
+    
+    std::string s = getStr(input, "strategy"); if (!s.empty()) strategy = s;
 
     // Parse jobs
     auto jobItems = splitArray(input, "jobs");
@@ -191,6 +196,7 @@ bool tryReadConfig(
                 getNum(ai, "dur_prob"),
                 getNum(ai, "dur_max")
             );
+            arh.competencies = {"Mechanical"}; // Default for dynamic inputs
             if (!arh.id.empty()) arhList.push_back(arh);
         }
     }

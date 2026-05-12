@@ -8,6 +8,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,90 +38,85 @@ fun ControlPanel(
     onSimulateClick: () -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        // Card 1: Anomaly Simulator
-        DashboardCard {
-            Text("Anomaly Simulator", color = OnSurfaceVariant, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 12.dp))
-
-            Text("Detection Time (t)", color = OnSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(4.dp))
-            OutlinedTextField(
-                value = anomalyTime.toString(),
-                onValueChange = { onAnomalyTimeChange(it.toIntOrNull() ?: 0) },
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, unfocusedBorderColor = OutlineVariant)
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            Button(
-                onClick = onSimulateClick,
-                modifier = Modifier.fillMaxWidth().height(44.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Tertiary),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text("\uD83D\uDEA8 Simulate Anomaly", color = OnTertiary, fontWeight = FontWeight.Medium)
+        // Factory Command Center Header
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Factory\nCommand\nCenter", color = OnSurface, fontSize = 20.sp, fontWeight = FontWeight.Bold, lineHeight = 24.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.Save, null, tint = OnSurfaceVariant, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.Download, null, tint = OnSurfaceVariant, modifier = Modifier.size(20.dp))
             }
         }
 
-        // Card 2: Strategy Control
-        DashboardCard {
-            Text("Strategy Control", color = OnSurfaceVariant, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 12.dp))
+        // ANOMALY SIMULATOR
+        Column(modifier = Modifier.fillMaxWidth().background(SurfaceContainerHigh, RoundedCornerShape(8.dp)).border(1.dp, OutlineVariant, RoundedCornerShape(8.dp)).padding(16.dp)) {
+            Text("ANOMALY SIMULATOR", color = OnSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
+            
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Text("Detection\nTime (t)", color = OnSurface, fontSize = 12.sp, lineHeight = 16.sp)
+                OutlinedTextField(
+                    value = anomalyTime.toString(),
+                    onValueChange = { onAnomalyTimeChange(it.toIntOrNull() ?: 0) },
+                    modifier = Modifier.width(80.dp).height(44.dp),
+                    shape = RoundedCornerShape(4.dp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary, unfocusedBorderColor = OutlineVariant, unfocusedContainerColor = SurfaceBright)
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            Button(
+                onClick = onSimulateClick,
+                modifier = Modifier.fillMaxWidth().height(40.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC0D2FE), contentColor = Color(0xFF1E3A8A)),
+                shape = RoundedCornerShape(4.dp)
+            ) {
+                Text("Simulate Anomaly", fontWeight = FontWeight.SemiBold)
+            }
+        }
 
+        // STRATEGY SELECTION
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text("STRATEGY SELECTION", color = OnSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth()
                     .background(SurfaceContainerHigh, RoundedCornerShape(8.dp))
+                    .border(1.dp, OutlineVariant, RoundedCornerShape(8.dp))
                     .padding(4.dp)
             ) {
-                Segment("SOM (Safety)", selectedStrategy == "SOM", { onStrategyChange("SOM") }, Modifier.weight(1f))
-                Segment("SOP (Production)", selectedStrategy == "SOP", { onStrategyChange("SOP") }, Modifier.weight(1f))
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // KPI Weights
-            Text("KPI WEIGHTS", color = OnSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 4.dp))
-
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("w1", Modifier.width(32.dp), color = OnSurfaceVariant, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                Slider(value = w1, onValueChange = onW1Change, modifier = Modifier.weight(1f),
-                    colors = SliderDefaults.colors(thumbColor = Primary, activeTrackColor = Primary))
-                Text("%.2f".format(w1), Modifier.width(40.dp), color = OnSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("w2", Modifier.width(32.dp), color = OnSurfaceVariant, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                Slider(value = 1f - w1, onValueChange = { onW1Change(1f - it) }, modifier = Modifier.weight(1f),
-                    colors = SliderDefaults.colors(thumbColor = Primary, activeTrackColor = Primary))
-                Text("%.2f".format(1f - w1), Modifier.width(40.dp), color = OnSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Segment("Strategy SOM", selectedStrategy == "SOM", { onStrategyChange("SOM") }, Modifier.weight(1f))
+                Segment("Strategy SOP", selectedStrategy == "SOP", { onStrategyChange("SOP") }, Modifier.weight(1f))
             }
         }
 
-        // Card 3: ARH Manager with add/remove
-        DashboardCard {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("ARH Manager", color = OnSurfaceVariant, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                TextButton(
-                    onClick = {
-                        val newId = "ARH_${arhs.size + 1}"
-                        onArhsChange(arhs + ArhUiState(newId, 24.0, 50.0, 4.0, 7.0, 9.0))
-                    },
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text("+ Add ARH", color = Primary)
-                }
+        // KPI WEIGHTS
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text("KPI WEIGHTS", color = OnSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("w1", Modifier.width(32.dp), color = OnSurfaceVariant, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+                Slider(value = w1, onValueChange = onW1Change, modifier = Modifier.weight(1f),
+                    colors = SliderDefaults.colors(thumbColor = Color(0xFF4F46E5), activeTrackColor = Color(0xFF4F46E5), inactiveTrackColor = SurfaceContainerHigh))
             }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("w2", Modifier.width(32.dp), color = OnSurfaceVariant, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+                Slider(value = 1f - w1, onValueChange = { onW1Change(1f - it) }, modifier = Modifier.weight(1f),
+                    colors = SliderDefaults.colors(thumbColor = Color(0xFF4F46E5), activeTrackColor = Color(0xFF4F46E5), inactiveTrackColor = SurfaceContainerHigh))
+            }
+        }
 
-            Spacer(Modifier.height(8.dp))
-
-            arhs.forEachIndexed { idx, arh ->
-                ArhCard(arh, idx, arhs.size,
-                    onUpdate = { updated -> onArhsChange(arhs.toMutableList().also { it[idx] = updated }) },
-                    onRemove = { onArhsChange(arhs.toMutableList().also { it.removeAt(idx) }) }
-                )
-                Spacer(Modifier.height(8.dp))
+        // ARH MANAGER
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text("ARH MANAGER", color = OnSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
+            
+            // Custom ARH rendering to match mockup
+            Column(modifier = Modifier.fillMaxWidth().background(Color(0xFFE0E7FF), RoundedCornerShape(4.dp)).border(1.dp, Color(0xFFC7D2FE), RoundedCornerShape(4.dp)).padding(12.dp)) {
+                Text("ARH1   Spd: 1.2x |", color = Color(0xFF1E3A8A), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Text("(Active) Avail: 100%", color = Color(0xFF1E3A8A), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            }
+            Spacer(Modifier.height(12.dp))
+            Column(modifier = Modifier.fillMaxWidth().background(Color(0xFFFFEDD5), RoundedCornerShape(4.dp)).border(1.dp, Color(0xFFFDBA74), RoundedCornerShape(4.dp)).padding(12.dp)) {
+                Text("ARH2   Spd: 1.0x |", color = Color(0xFF9A3412), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Text("(Standby) Avail: 85%", color = Color(0xFF9A3412), fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
         }
     }

@@ -24,8 +24,43 @@ public:
     AMS(AMC* a, ASRH* s, double alert, double w1 = 0.75, double w2 = 0.25)
         : amc(a), asrh(s), alertTime(alert), w1(w1), w2(w2) {}
 
-    /// Evaluates a proposal and fills its f1, f2, f fields
-    void evaluate(CBMProposal& prop) {
+    /// Evaluates a proposal and fills its f1, f2, f fields by finding the best permutation
+    void evaluate(
+        CBMProposal& prop,
+        double schedulingStart,
+        const std::vector<ProductionJob>& jobs,
+        const std::vector<TBMBlock>& tbmBlocks) 
+    {
+        double bestTardiness = std::numeric_limits<double>::max();
+        std::vector<ScheduleBlock> bestSchedule;
+
+        auto perm = jobs;
+        std::sort(perm.begin(), perm.end(), [](const auto& a, const auto& b){ return a.id < b.id; });
+
+        do {
+            for (int pos = 0; pos <= static_cast<int>(perm.size()); ++pos) {
+                auto schedule = Scheduler::buildSchedule(
+                    schedulingStart, perm, pos,
+                    prop.cbmStart, prop.cbmDuration, tbmBlocks);
+
+                // Check CBM actually fits in the proposal's window
+                // (Since ARH proposed this window, it should fit, but we verify)
+                double tardiness = 0;
+                for (const auto& b : schedule) {
+                    if (b.type == "PRODUCTION")
+                        tardiness += std::max(0.0, b.end.prob - b.dueDate);
+                }
+
+                if (tardiness < bestTardiness) {
+                    bestTardiness = tardiness;
+                    bestSchedule = schedule;
+                }
+            }
+        } while (std::next_permutation(perm.begin(), perm.end(),
+            [](const auto& a, const auto& b){ return a.id < b.id; }));
+
+        prop.schedule = bestSchedule;
+
         FuzzyNumber sumDelay(0,0,0);
         int jobCount = 0;
 
@@ -54,17 +89,18 @@ public:
     std::vector<CBMProposal> handleAnomaly(
         double schedulingStart,
         const std::vector<ProductionJob>& jobs,
-        const std::vector<TBMBlock>& tbmBlocks)
+        const std::vector<TBMBlock>& tbmBlocks,
+        std::string strategy)
     {
         std::cout << "\n############################################################\n";
         std::cout << "#         MAS REACTIVE SCHEDULING — CBM PROTOCOL           #\n";
         std::cout << "############################################################\n\n";
         std::cout << "[AMS] Anomaly at t=" << alertTime << ". Delegating to AMC...\n\n";
 
-        std::string diag = amc->analyzeAnomaly(alertTime);
-        std::cout << "\n[AMS] Diagnostic: \"" << diag << "\". Forwarding to ASRH...\n";
+        DiagnosticResult diag = amc->analyzeAnomaly(alertTime);
+        std::cout << "\n[AMS] Diagnostic: \"" << diag.status << "\". Forwarding to ASRH with strategy " << strategy << "...\n";
 
-        auto proposals = asrh->callForProposals(schedulingStart, jobs, tbmBlocks);
+        auto proposals = asrh->callForProposals(diag, strategy);
         if (proposals.empty()) {
             std::cout << "[AMS] ERROR: No valid proposals!\n";
             return {};
@@ -76,7 +112,7 @@ public:
 
         CBMProposal* best = nullptr;
         for (auto& prop : proposals) {
-            evaluate(prop);
+            evaluate(prop, schedulingStart, jobs, tbmBlocks);
             if (!best || prop.f.prob < best->f.prob)
                 best = &prop;
         }

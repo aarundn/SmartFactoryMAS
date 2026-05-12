@@ -34,6 +34,7 @@ import kotlin.math.max
 @Composable
 fun GanttChart(
     state: GanttState,
+    anomalyTimeInput: Int,
     onPreviousStep: () -> Unit,
     onNextStep: () -> Unit,
     isAutoRunning: Boolean,
@@ -113,24 +114,34 @@ fun GanttChart(
 
                     // Anomaly line and RUL Zone
                     if (state.currentStep >= 1) {
-                        val anomalyPx = (8.0 * pxPerUnit).toFloat()
+                        val alertTime = anomalyTimeInput.toDouble()
+                        val anomalyPx = (alertTime * pxPerUnit).toFloat()
                         
-                        // RUL Zone
-                        val cbmBlock = state.schedule.find { it.type == TaskType.CBM }
-                        if (cbmBlock != null) {
-                            val rulEndPx = (cbmBlock.startTime * pxPerUnit).toFloat()
-                            drawRect(
-                                color = Error.copy(alpha = 0.08f),
-                                topLeft = Offset(anomalyPx, 0f),
-                                size = Size(rulEndPx - anomalyPx, axisY)
-                            )
-                            drawText(
-                                textMeasurer = textMeasurer,
-                                text = "RUL Zone",
-                                style = TextStyle(color = Error.copy(alpha = 0.8f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
-                                topLeft = Offset(anomalyPx + 4.dp.toPx(), 4.dp.toPx())
-                            )
-                        }
+                        // RUL / RISK ZONE
+                        val rulMin =  100.0
+                        val rulProb =  120.0
+                        val rulMax = 140.0
+                        val rulMinPx = (rulMin * pxPerUnit).toFloat()
+                        val rulProbPx = (rulProb * pxPerUnit).toFloat()
+                        val rulMaxPx = (rulMax * pxPerUnit).toFloat()
+                        
+                        // Shade min to max
+                        drawRect(
+                            color = Error.copy(alpha = 0.06f),
+                            topLeft = Offset(rulMinPx, 0f),
+                            size = Size(rulMaxPx - rulMinPx, size.height + 50)
+                        )
+
+                        // Vertical dashed lines
+                        drawLine(Error.copy(alpha = 0.4f), Offset(rulMinPx, 0f), Offset(rulMinPx, size.height + 50), 1f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)))
+                        drawLine(Error.copy(alpha = 0.4f), Offset(rulMaxPx, 0f), Offset(rulMaxPx, size.height + 50), 1f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)))
+
+
+                        val riskZoneText = textMeasurer.measure("RISK ZONE", TextStyle(color = Error.copy(alpha = 0.9f), fontSize = 11.sp, fontWeight = FontWeight.Bold))
+                        drawText(
+                            textLayoutResult = riskZoneText,
+                            topLeft = Offset(rulMinPx + (rulMaxPx - rulMinPx - riskZoneText.size.width) / 2f, size.height + 15)
+                        )
 
                         // Zigzag Signal d'anomalie
                         val zigzagPath = Path().apply {

@@ -50,6 +50,7 @@ data class MASOutput(
 
 @Serializable
 data class EngineInput(
+    val strategy: String = "SOM",
     @SerialName("alert_time") val alertTime: Double = 8.0,
     @SerialName("scheduling_start") val schedulingStart: Double = 24.0,
     val w1: Double = 0.75,
