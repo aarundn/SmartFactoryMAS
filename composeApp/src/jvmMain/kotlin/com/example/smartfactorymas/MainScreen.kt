@@ -12,6 +12,10 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -86,6 +90,15 @@ fun MainScreen() {
         }
     }
 
+    var leftExpanded by remember { mutableStateOf(true) }
+    var rightExpanded by remember { mutableStateOf(true) }
+    var leftBaseWidth by remember { mutableStateOf(200.dp) }
+    var rightBaseWidth by remember { mutableStateOf(400.dp) }
+    
+    val leftCurrentWidth by animateDpAsState(if (leftExpanded) leftBaseWidth else 48.dp)
+    val rightCurrentWidth by animateDpAsState(if (rightExpanded) rightBaseWidth else 48.dp)
+    val density = LocalDensity.current
+
     Row(modifier = Modifier.fillMaxSize().background(SurfaceBright)) {
         Sidebar()
 
@@ -97,29 +110,55 @@ fun MainScreen() {
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // ── Left: Control Panel ──
-                Column(modifier = Modifier.weight(0.25f).fillMaxHeight()) {
-                    val scrollState = rememberScrollState()
-                    Column(modifier = Modifier.verticalScroll(scrollState)) {
-                        ControlPanel(
-                            selectedStrategy = strategy,
-                            onStrategyChange = { strategy = it },
-                            w1 = w1,
-                            onW1Change = { w1 = it },
-                            anomalyTime = anomalyTime,
-                            onAnomalyTimeChange = { anomalyTime = it },
-                            anomalySeverity = severity,
-                            onSeverityChange = { severity = it },
-                            cbmBaseDuration = cbmBaseDur,
-                            onCbmBaseChange = { cbmBaseDur = it },
-                            arhs = arhs,
-                            onArhsChange = { arhs = it },
-                            onSimulateClick = ::runAutoSimulation
-                        )
+                Column(modifier = Modifier.width(leftCurrentWidth).fillMaxHeight()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        horizontalArrangement = if (leftExpanded) Arrangement.End else Arrangement.Center
+                    ) {
+                        IconButton(onClick = { leftExpanded = !leftExpanded }, modifier = Modifier.size(36.dp)) {
+                            Icon(if (leftExpanded) Icons.Default.KeyboardDoubleArrowLeft else Icons.Default.KeyboardDoubleArrowRight, "Toggle Left Panel")
+                        }
+                    }
+                    if (leftExpanded) {
+                        val scrollState = rememberScrollState()
+                        Column(modifier = Modifier.verticalScroll(scrollState)) {
+                            ControlPanel(
+                                selectedStrategy = strategy,
+                                onStrategyChange = { strategy = it },
+                                w1 = w1,
+                                onW1Change = { w1 = it },
+                                anomalyTime = anomalyTime,
+                                onAnomalyTimeChange = { anomalyTime = it },
+                                anomalySeverity = severity,
+                                onSeverityChange = { severity = it },
+                                cbmBaseDuration = cbmBaseDur,
+                                onCbmBaseChange = { cbmBaseDur = it },
+                                arhs = arhs,
+                                onArhsChange = { arhs = it },
+                                onSimulateClick = ::runAutoSimulation
+                            )
+                        }
                     }
                 }
 
+                // Splitter Left
+                if (leftExpanded) {
+                    Box(modifier = Modifier
+                        .fillMaxHeight()
+                        .width(4.dp)
+                        .background(OutlineVariant.copy(0.5f))
+                        .pointerInput(Unit) {
+                            detectHorizontalDragGestures { change, dragAmount ->
+                                change.consume()
+                                val dragDp = with(density) { dragAmount.toDp() }
+                                leftBaseWidth = (leftBaseWidth + dragDp).coerceIn(250.dp, 600.dp)
+                            }
+                        }
+                    )
+                }
+
                 // ── Center: Gantt Chart with proposal tabs ──
-                Column(modifier = Modifier.weight(0.50f).fillMaxHeight()) {
+                Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     // Proposal selector tabs (if we have results)
                     val output = ganttState.masOutput
                     if (output != null && output.proposals.size > 1) {
@@ -160,23 +199,49 @@ fun MainScreen() {
                     )
                 }
 
+                // Splitter Right
+                if (rightExpanded) {
+                    Box(modifier = Modifier
+                        .fillMaxHeight()
+                        .width(4.dp)
+                        .background(OutlineVariant.copy(0.5f))
+                        .pointerInput(Unit) {
+                            detectHorizontalDragGestures { change, dragAmount ->
+                                change.consume()
+                                val dragDp = with(density) { dragAmount.toDp() }
+                                rightBaseWidth = (rightBaseWidth - dragDp).coerceIn(250.dp, 600.dp)
+                            }
+                        }
+                    )
+                }
+
                 // ── Right: Metrics + Logs ──
                 Column(
-                    modifier = Modifier.weight(0.25f).fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(24.dp)
+                    modifier = Modifier.width(rightCurrentWidth).fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    MetricsDashboard(
-                        f1 = ganttState.f1,
-                        f2 = ganttState.f2,
-                        globalF = ganttState.f,
-                        chosenArh = ganttState.chosenArh,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    CommunicationLog(
-                        logs = ganttState.logs,
-                        modifier = Modifier.weight(1f).fillMaxWidth()
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = if (rightExpanded) Arrangement.Start else Arrangement.Center
+                    ) {
+                        IconButton(onClick = { rightExpanded = !rightExpanded }, modifier = Modifier.size(36.dp)) {
+                            Icon(if (rightExpanded) Icons.Default.KeyboardDoubleArrowRight else Icons.Default.KeyboardDoubleArrowLeft, "Toggle Right Panel")
+                        }
+                    }
+                    if (rightExpanded) {
+                        MetricsDashboard(
+                            f1 = ganttState.f1,
+                            f2 = ganttState.f2,
+                            globalF = ganttState.f,
+                            chosenArh = ganttState.chosenArh,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        CommunicationLog(
+                            logs = ganttState.logs,
+                            modifier = Modifier.weight(1f).fillMaxWidth()
+                        )
+                    }
                 }
             }
         }

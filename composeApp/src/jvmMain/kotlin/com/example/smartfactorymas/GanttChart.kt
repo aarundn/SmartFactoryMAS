@@ -72,11 +72,11 @@ fun GanttChart(
                     .border(1.dp, OutlineVariant, RoundedCornerShape(8.dp))
                     .padding(top = 32.dp, bottom = 48.dp, start = 16.dp, end = 16.dp)
             ) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val maxTime = max(160.0, state.schedule.maxOfOrNull { it.endMax } ?: 160.0) + 10.0
+                Canvas(modifier = Modifier.fillMaxSize().padding(bottom = 16.dp)) {
+                    val maxTime = max(180.0, state.schedule.maxOfOrNull { it.endMax } ?: 180.0) + 10.0
                     val pxPerUnit = size.width / maxTime.toFloat()
                     
-                    val tracksToDraw = if (state.tracks.isNotEmpty()) state.tracks else listOf(state.schedule)
+                    val tracksToDraw = state.tracks.ifEmpty { listOf(state.schedule) }
                     val numTracks = tracksToDraw.size
                     
                     // Distribute tracks vertically

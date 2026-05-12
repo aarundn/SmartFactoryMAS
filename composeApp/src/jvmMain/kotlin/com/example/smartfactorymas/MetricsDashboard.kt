@@ -82,7 +82,7 @@ private fun MetricCard(
         Text(label, color = labelColor, fontSize = 13.sp, fontWeight = if (isMaster) FontWeight.SemiBold else FontWeight.Medium)
         
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(value, color = valueColor, fontSize = if (isMaster) 24.sp else 20.sp, fontWeight = FontWeight.Bold)
+            Text(value, color = valueColor, fontSize = if (isMaster) 16.sp else 18.sp, fontWeight = FontWeight.Bold)
             if (trend != null) {
                 Spacer(Modifier.width(8.dp))
                 // Using a manual green color since Emerald500 is gone from Theme.kt
