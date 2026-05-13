@@ -19,6 +19,7 @@
 #include "ARH.h"
 #include "ASRH.h"
 #include "AMS.h"
+#include "JsonLogger.h"
 
 // Tries to read JSON config from stdin; returns false if empty
 bool tryReadConfig(
@@ -144,7 +145,7 @@ bool tryReadConfig(
     if (input.empty() || input.find('{') == std::string::npos)
         return false;
 
-    std::cout << "[SYS] Received dynamic configuration from UI.\n";
+    jsonLog("SYS", "Received dynamic configuration from UI.");
 
     // Parse top-level fields
     double v;

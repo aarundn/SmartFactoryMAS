@@ -5,7 +5,7 @@
 #pragma once
 #include "ARH.h"
 #include <vector>
-#include <iostream>
+#include "JsonLogger.h"
 
 class ASRH {
 public:
@@ -17,10 +17,26 @@ public:
         DiagnosticResult diag,
         std::string strategy)
     {
-        std::cout << "\n************************************************************\n";
-        std::cout << "[ASRH] Broadcasting CFP to " << registeredARHs.size()
-                  << " ARH agents...\n";
-        std::cout << "************************************************************\n";
+        std::string skill = diag.requiredCompetence.empty() ? "Mechanical" : diag.requiredCompetence;
+        jsonLog("ASRH", "Triggered: CBM required. Required skill: " + skill + ".", "info", 1);
+        jsonLog("ASRH", "Strategy selected: " + strategy + ". Scanning technicians...", "info", 2);
+
+        // Step 3: Pre-filtering (Matchmaking)
+        std::vector<ARH> qualifiedARHs;
+        for (const auto& arh : registeredARHs) {
+            bool hasCompetence = false;
+            for (const auto& comp : arh.competencies) {
+                if (comp == skill || diag.requiredCompetence.empty()) {
+                    hasCompetence = true;
+                    break;
+                }
+            }
+            if (hasCompetence || diag.requiredCompetence.empty()) {
+                qualifiedARHs.push_back(arh);
+            }
+        }
+
+        jsonLog("ASRH", "Found " + std::to_string(qualifiedARHs.size()) + " qualified technicians. Sending CFP...", "info", 4);
 
         double deadlineLimit = 0.0;
         if (strategy == "SOM") {
@@ -31,38 +47,34 @@ public:
             deadlineLimit = diag.estimatedRUL.prob; // default
         }
 
+        // Step 4 & 5: Reception
         std::vector<CBMProposal> proposals;
-        for (const auto& arh : registeredARHs) {
-            // Check competence
-            bool hasCompetence = false;
-            for (const auto& comp : arh.competencies) {
-                if (comp == diag.requiredCompetence) {
-                    hasCompetence = true;
-                    break;
-                }
-            }
-            if (!hasCompetence && !diag.requiredCompetence.empty()) {
-                std::cout << "[ASRH] REJECTED " << arh.id 
-                          << ": Lacks required competence '" << diag.requiredCompetence << "'.\n";
-                continue;
-            }
-
+        std::string respondingARHs = "";
+        for (const auto& arh : qualifiedARHs) {
             auto props = arh.propose();
             for (auto& prop : props) {
                 double expectedFinish = prop.cbmStart + prop.cbmDuration.prob;
                 if (expectedFinish <= deadlineLimit) {
                     proposals.push_back(prop);
+                    if (!respondingARHs.empty()) respondingARHs += " and ";
+                    respondingARHs += arh.id;
                 } else {
-                    std::cout << "[ASRH] REJECTED " << arh.id 
-                              << " window [" << prop.cbmStart << "]: Expected finish (" << expectedFinish 
-                              << ") exceeds RUL deadline limit (" << deadlineLimit 
-                              << ") under strategy " << strategy << ".\n";
+                    jsonLog("ASRH", "REJECTED " + arh.id + " window [" + std::to_string((int)prop.cbmStart) + "]: Expected finish (" + std::to_string((int)expectedFinish) + ") exceeds RUL deadline limit (" + std::to_string((int)deadlineLimit) + ") under strategy " + strategy + ".", "warn", 5);
                 }
             }
         }
 
-        std::cout << "\n[ASRH] Received " << proposals.size()
-                  << " valid proposal(s).\n";
+        // Step 6: Forwarding
+        if (respondingARHs.empty()) {
+            jsonLog("ASRH", "No valid proposals received.", "error", 6);
+        } else {
+            jsonLog("ASRH", "Received proposals from " + respondingARHs + ". Forwarding to AMS.", "info", 6);
+        }
+        
         return proposals;
+    }
+
+    void confirm(const std::string& arhId) {
+        jsonLog("ASRH", "Confirmation sent to " + arhId + ". Rejecting other proposals.", "info", 7);
     }
 };

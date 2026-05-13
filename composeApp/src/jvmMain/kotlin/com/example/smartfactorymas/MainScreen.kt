@@ -1,7 +1,9 @@
 package com.example.smartfactorymas
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -12,14 +14,12 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,13 +78,20 @@ fun MainScreen() {
             try {
                 val input = buildEngineInput()
                 withContext(Dispatchers.IO) {
-                    domain.runEngine(input)
+                    domain.runEngine(input) { event ->
+                        // Live stream events to UI
+                        scope.launch {
+                            if (event is LogEvent) {
+                                ganttState = ganttState.copy(logs = ganttState.logs + event)
+                            }
+                        }
+                    }
                 }
                 selectedProposal = 0
                 ganttState = domain.buildResultState(0)
             } catch (e: Exception) {
                 ganttState = ganttState.copy(
-                    logs = ganttState.logs + "[ERROR] ${e.message}"
+                    logs = ganttState.logs + LogEvent(agent = "SYS", msg = "ERROR: ${e.message}", level = "error")
                 )
             }
             isAutoRunning = false

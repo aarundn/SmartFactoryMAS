@@ -15,18 +15,19 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.Alignment
 import kotlinx.coroutines.delay
 
 @Composable
 fun CommunicationLog(
-    logs: List<String>,
+    logs: List<LogEvent>,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
 
     LaunchedEffect(logs.size) {
         if (logs.isNotEmpty()) {
-            delay(100) // Small delay to let layout pass finish
+            delay(100)
             listState.animateScrollToItem(logs.size - 1)
         }
     }
@@ -37,7 +38,7 @@ fun CommunicationLog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0F172A), RoundedCornerShape(8.dp)) // Slate900 exact
+                .background(Color(0xFF0F172A), RoundedCornerShape(8.dp))
                 .border(1.dp, OutlineVariant, RoundedCornerShape(8.dp))
                 .padding(12.dp)
         ) {
@@ -46,21 +47,55 @@ fun CommunicationLog(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                items(logs) { log ->
-                    val color = when {
-                        log.contains("CRITICAL") || log.contains("ERROR") -> Error
-                        log.contains("CBM") || log.contains("Strategy") -> Secondary
-                        else -> Color(0xFFCBD5E1) // Slate300 exact
+                items(logs) { event ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Agent badge
+                        Text(
+                            text = "[${event.agent}]",
+                            color = agentColor(event.agent),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        
+                        // Step badge (if present)
+                        event.step?.let {
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFF334155), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                            ) {
+                                Text("Step $it", color = Color.White.copy(0.7f), fontSize = 9.sp)
+                            }
+                            Spacer(Modifier.width(6.dp))
+                        }
+
+                        // Message
+                        Text(
+                            text = event.msg,
+                            color = levelColor(event.level),
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            lineHeight = 16.sp
+                        )
                     }
-                    Text(
-                        text = log,
-                        color = color,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 16.sp
-                    )
                 }
             }
         }
     }
+}
+
+fun agentColor(agent: String): Color = when (agent) {
+    "AMS"  -> Color(0xFF60A5FA)   // Blue-400
+    "AMC"  -> Color(0xFFFBBF24)   // Amber-400
+    "ASRH" -> Color(0xFF34D399)   // Emerald-400
+    "SYS"  -> Color(0xFF94A3B8)   // Slate-400
+    else   -> if (agent.startsWith("ARH")) Color(0xFFA78BFA) else Color(0xFFCBD5E1)
+}
+
+fun levelColor(level: String): Color = when (level) {
+    "warn"  -> Color(0xFFFBBF24)
+    "error" -> Color(0xFFF87171)
+    else    -> Color(0xFFCBD5E1)
 }

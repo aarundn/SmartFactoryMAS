@@ -3,7 +3,53 @@ package com.example.smartfactorymas
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-// ─── JSON output models from C++ MAS engine ───────────────────────────────────
+// ─── JSONL event models from C++ MAS engine ───────────────────────────────────
+
+@Serializable
+sealed class EngineEvent {
+    abstract val type: String
+}
+
+@Serializable
+@SerialName("log")
+data class LogEvent(
+    override val type: String = "log",
+    val agent: String,
+    val msg: String,
+    val level: String = "info",
+    val step: Int? = null
+) : EngineEvent()
+
+@Serializable
+@SerialName("proposal")
+data class ProposalEvent(
+    override val type: String = "proposal",
+    @SerialName("arh_id") val arhId: String,
+    @SerialName("cbm_start") val cbmStart: Double,
+    @SerialName("cbm_dur_min") val cbmDurMin: Double,
+    @SerialName("cbm_dur_prob") val cbmDurProb: Double,
+    @SerialName("cbm_dur_max") val cbmDurMax: Double,
+    @SerialName("f1_min") val f1Min: Double,
+    @SerialName("f1_prob") val f1Prob: Double,
+    @SerialName("f1_max") val f1Max: Double,
+    val f2: Double,
+    @SerialName("f_min") val fMin: Double,
+    @SerialName("f_prob") val fProb: Double,
+    @SerialName("f_max") val fMax: Double,
+    val schedule: List<ScheduleBlockDto>,
+    val tracks: List<List<ScheduleBlockDto>> = emptyList()
+) : EngineEvent()
+
+@Serializable
+@SerialName("result")
+data class ResultEvent(
+    override val type: String = "result",
+    @SerialName("chosen_arh") val chosenArh: String,
+    val w1: Double,
+    val w2: Double,
+    @SerialName("alert_time") val alertTime: Double,
+    val proposals: List<ProposalDto>
+) : EngineEvent()
 
 @Serializable
 data class ScheduleBlockDto(
@@ -32,7 +78,8 @@ data class ProposalDto(
     @SerialName("f_min") val fMin: Double,
     @SerialName("f_prob") val fProb: Double,
     @SerialName("f_max") val fMax: Double,
-    val schedule: List<ScheduleBlockDto>
+    val schedule: List<ScheduleBlockDto>,
+    val tracks: List<List<ScheduleBlockDto>> = emptyList()
 )
 
 @Serializable

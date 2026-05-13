@@ -33,25 +33,7 @@ public:
     static std::vector<ScheduleBlock> buildSchedule(
         double startTime,
         const std::vector<ProductionJob>& jobs,
-        int cbmInsertPos,
         double cbmStart,
         const FuzzyNumber& cbmDuration,
         const std::vector<TBMBlock>& tbmBlocks);
-
-private:
-    /// Inserts any TBM blocks whose start time <= currentTime.prob
-    static void insertDueTBMs(
-        FuzzyNumber& currentTime,
-        std::vector<ScheduleBlock>& result,
-        const std::vector<TBMBlock>& tbms,
-        size_t& tbmIdx);
-
-    /// Places a flexible block, skipping over TBM blocks if it doesn't fit
-    static void placeFlexibleBlock(
-        const std::string& id, const std::string& type,
-        double duration, double dueDate,
-        FuzzyNumber& currentTime,
-        std::vector<ScheduleBlock>& result,
-        const std::vector<TBMBlock>& tbms,
-        size_t& tbmIdx);
 };

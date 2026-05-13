@@ -10,10 +10,9 @@
 #pragma once
 #include "DataStructures.h"
 #include "Scheduler.h"
-#include <optional>
-#include <limits>
-#include <algorithm>
-#include <iostream>
+#include "JsonLogger.h"
+#include <string>
+#include <vector>
 
 class ARH {
 public:
@@ -25,16 +24,14 @@ public:
     std::vector<CBMProposal> propose() const
     {
         std::vector<CBMProposal> proposals;
-        std::cout << "\n------------------------------------------------------------\n";
-        std::cout << "[" << id << "] Received CFP. Duration: " << repairDuration << "\n";
+        jsonLog(id, "Received CFP. Duration: " + repairDuration.str());
 
         for (const auto& window : availabilities) {
             double windowLen = window.end - window.start;
-            std::cout << "[" << id << "] Window [" << window.start << ", "
-                      << window.end << "] len=" << windowLen << "\n";
+            jsonLog(id, "Window [" + std::to_string((int)window.start) + ", " + std::to_string((int)window.end) + "] len=" + std::to_string((int)windowLen));
 
             if (windowLen < repairDuration.prob) {
-                std::cout << "[" << id << "]   Too small. Skipping.\n";
+                jsonLog(id, "  Too small. Skipping.", "warn");
                 continue;
             }
 
@@ -46,11 +43,10 @@ public:
         }
 
         if (proposals.empty()) {
-            std::cout << "[" << id << "]   REJECTED. No valid windows.\n";
+            jsonLog(id, "  REJECTED. No valid windows.", "warn");
         } else {
-            std::cout << "[" << id << "]   Proposed " << proposals.size() << " valid window(s).\n";
+            jsonLog(id, "  Proposed " + std::to_string(proposals.size()) + " valid window(s).");
         }
-        std::cout << "------------------------------------------------------------\n";
         return proposals;
     }
 };

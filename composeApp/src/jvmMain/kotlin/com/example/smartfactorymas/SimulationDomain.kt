@@ -29,21 +29,21 @@ data class GanttState(
     val f1: Float = 0f,
     val f2: Float = 0f,
     val f: Float = 0f,
-    val logs: List<String> = emptyList(),
+    val logs: List<LogEvent> = emptyList(),
     val chosenArh: String? = null,
     val masOutput: MASOutput? = null,
     val selectedProposalIdx: Int = 0,
-    val tracks: List<List<TaskBlock>> = emptyList() // Added to hold multiple rows/steps
+    val tracks: List<List<TaskBlock>> = emptyList()
 )
 
 /**
  * Domain logic — bridges engine output to UI state.
  */
+
 class SimulationDomain {
 
     private val anomalyTime = 8.0
 
-    // Initial schedule (before anomaly, Table 4.1)
     val initialSchedule = listOf(
         TaskBlock("P4", TaskType.PRODUCTION, 4.0, 20.0, 60.0),
         TaskBlock("P3", TaskType.PRODUCTION, 24.0, 46.0, 40.0),
@@ -55,28 +55,29 @@ class SimulationDomain {
 
     private var cachedResult: CliInterop.EngineResult? = null
 
+    // FIXED: Using LogEvent instead of plain Strings
     fun buildInitialState(): GanttState = GanttState(
         currentStep = 0,
         schedule = initialSchedule,
         tracks = listOf(initialSchedule),
-        logs = listOf("[AMS] Initial schedule loaded. Monitoring machine health...")
+        logs = listOf(
+            LogEvent(agent = "AMS", msg = "Initial schedule loaded. Monitoring machine health...", level = "info")
+        )
     )
 
+    // FIXED: Using LogEvent instead of plain Strings
     fun buildAnomalyState(): GanttState = GanttState(
         currentStep = 1,
         schedule = initialSchedule,
         tracks = listOf(initialSchedule),
         logs = listOf(
-            "[AMS] Initial schedule loaded.",
-            "[AMC] ANOMALY DETECTED at t=$anomalyTime!",
-            "[AMC] Diagnostic: CBM_Required",
-            "[AMS] Forwarding to ASRH for negotiation..."
+            LogEvent(agent = "AMS", msg = "Initial schedule loaded.", level = "info"),
+            LogEvent(agent = "AMC", msg = "ANOMALY DETECTED at t=$anomalyTime!", level = "error"),
+            LogEvent(agent = "AMC", msg = "Diagnostic: CBM_Required", level = "warn"),
+            LogEvent(agent = "AMS", msg = "Forwarding to ASRH for negotiation...", level = "info")
         )
     )
 
-    /**
-     * Converts engine output into a GanttState for a specific proposal.
-     */
     fun buildResultState(proposalIdx: Int = 0): GanttState {
         val result = cachedResult ?: return buildInitialState()
         val out = result.output
@@ -86,7 +87,8 @@ class SimulationDomain {
         val idx = proposalIdx.coerceIn(0, proposals.lastIndex)
         val prop = proposals[idx]
 
-        val schedule = prop.schedule.map { block ->
+        // Map final engine result
+        val finalEngineSchedule = prop.schedule.map { block ->
             val type = when (block.type) {
                 "PRODUCTION" -> TaskType.PRODUCTION
                 "TBM" -> TaskType.TBM
@@ -106,78 +108,87 @@ class SimulationDomain {
             )
         }
 
-        // Build construction steps (tracks) for the Gantt Chart
-        val fixedBlocks = schedule.filter { it.type == TaskType.CBM || it.type == TaskType.TBM }
-        val prodJobs = schedule.filter { it.type == TaskType.PRODUCTION }
+        val cbmBlock = finalEngineSchedule.find { it.type == TaskType.CBM } ?: return buildInitialState()
+        val cbmStart = cbmBlock.startTime
+        val cbmDuration = cbmBlock.duration
+
+        val finalFixedBlocks = finalEngineSchedule.filter { it.type == TaskType.CBM || it.type == TaskType.TBM }
+
+        // Jobs that finished before CBM (like P4)
+        val unaffectedJobs = initialSchedule.filter {
+            it.type == TaskType.PRODUCTION && it.endTime <= cbmStart
+        }
+
+        // Original order (P3 -> P2 -> P1)
+        val originalAffectedJobs = initialSchedule.filter {
+            it.type == TaskType.PRODUCTION && it.endTime > cbmStart
+        }.sortedBy { it.startTime }
+
         val tracks = mutableListOf<List<TaskBlock>>()
-        
-        if (prop.arhId == "ARH_1") {
-            // Figure 4.6 implementation
-            tracks.add(initialSchedule) // (0)
-            tracks.add(fixedBlocks)     // (1)
-            
-            // Track 2: CBM + M1 + M2 + P3(103-149) + P2(149-155) + P1(155-176)
-            val p3_end = TaskBlock("P3", TaskType.PRODUCTION, 103.0, 46.0, 40.0)
-            val p2_end = TaskBlock("P2", TaskType.PRODUCTION, 149.0, 6.0, 93.0)
-            val p1_end = TaskBlock("P1", TaskType.PRODUCTION, 155.0, 21.0, 110.0)
-            tracks.add(fixedBlocks + listOf(p3_end, p2_end, p1_end)) // (2)
-            
-            // Track 3: P1 moved to 31-52, P3 still at end
-            val p1_correct = prodJobs.find { it.id == "P1" } ?: p1_end
-            val p3_correct = prodJobs.find { it.id == "P3" } ?: p3_end
-            tracks.add(fixedBlocks + listOf(p1_correct, p3_correct)) // (3)
-            
-            tracks.add(schedule) // (4) Final
-        } else if (prop.arhId == "ARH_2") {
-            // Figure 4.7 implementation
-            tracks.add(initialSchedule) // (0)
-            
-            val tbmOnly = fixedBlocks.filter { it.type == TaskType.TBM }
-            val cbm = fixedBlocks.find { it.type == TaskType.CBM }
-            val p3 = initialSchedule.find { it.id == "P3" }!!
-            val p2 = initialSchedule.find { it.id == "P2" }!!
-            
-            // Track 1: M1, M2, P3, P2
-            tracks.add(tbmOnly + listOf(p3, p2)) // (1)
-            
-            // Track 2: M1, M2, P3, P2, CBM
-            if (cbm != null) tracks.add(tbmOnly + listOf(p3, p2, cbm)) // (2)
-            
-            tracks.add(schedule) // (3) Final
-        } else {
-            // Fallback sequential logic
-            tracks.add(initialSchedule)
-            tracks.add(fixedBlocks)
-            var currentTrack = fixedBlocks.toMutableList()
-            for (job in prodJobs) {
-                currentTrack = currentTrack.toMutableList()
-                currentTrack.add(job)
-                tracks.add(currentTrack)
+
+        // Track 0: Initial
+        tracks.add(initialSchedule)
+
+        // Track 1: CBM Inserted
+        tracks.add(unaffectedJobs + finalFixedBlocks)
+
+        // Track 2: Naive Sequential Push
+        var cursor = cbmStart + cbmDuration
+        val naiveJobs = mutableListOf<TaskBlock>()
+        for (job in originalAffectedJobs) {
+            var collision: TaskBlock?
+            do {
+                val currentEnd = cursor + job.duration
+                collision = finalFixedBlocks.find {
+                    it.type == TaskType.TBM && cursor < it.endTime && currentEnd > it.startTime
+                }
+                if (collision != null) cursor = collision.endTime
+            } while (collision != null)
+
+            naiveJobs.add(job.copy(
+                startTime = cursor, startMin = cursor, startMax = cursor,
+                endMin = cursor + job.duration, endMax = cursor + job.duration
+            ))
+            cursor += job.duration
+        }
+        tracks.add(unaffectedJobs + finalFixedBlocks + naiveJobs)
+
+        // Track 3..N: Pulling to Optimal
+        val optimalAffectedJobs = finalEngineSchedule.filter {
+            it.type == TaskType.PRODUCTION && it.id in originalAffectedJobs.map { j -> j.id }
+        }.sortedBy { it.startTime }
+
+        var currentTrackJobs = naiveJobs.toList()
+        for (optimizedJob in optimalAffectedJobs) {
+            currentTrackJobs = currentTrackJobs.map {
+                if (it.id == optimizedJob.id) optimizedJob else it
             }
+            tracks.add(unaffectedJobs + finalFixedBlocks + currentTrackJobs)
+        }
+
+        val completeFinalSchedule = unaffectedJobs + finalEngineSchedule
+        if (tracks.last() != completeFinalSchedule) {
+            tracks.add(completeFinalSchedule)
         }
 
         return GanttState(
-            currentStep = 3,
-            schedule = schedule,
+            currentStep = tracks.lastIndex,
+            schedule = completeFinalSchedule,
             tracks = tracks,
             f1 = prop.f1Prob.toFloat(),
             f2 = prop.f2.toFloat(),
             f = prop.fProb.toFloat(),
-            logs = result.logs.filter { it.isNotBlank() },
+            // FIXED: result.logs is already List<LogEvent>, removed the invalid string filter
+            logs = result.logs,
             chosenArh = out.chosenArh,
             masOutput = out,
             selectedProposalIdx = idx
         )
     }
 
-    /**
-     * Runs the C++ engine with the given configuration.
-     */
-    fun runEngine(
-        input: EngineInput? = null,
-        onLogLine: (String) -> Unit = {}
-    ): CliInterop.EngineResult {
-        val result = CliInterop.runSimulation(input, onLogLine)
+    // FIXED: Changed callback from (String) -> Unit to (EngineEvent) -> Unit to match CliInterop
+    fun runEngine(input: EngineInput? = null, onEvent: (EngineEvent) -> Unit = {}): CliInterop.EngineResult {
+        val result = CliInterop.runSimulation(input, onEvent)
         cachedResult = result
         return result
     }

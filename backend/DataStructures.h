@@ -41,6 +41,7 @@ struct CBMProposal {
     std::string arhId;
     double cbmStart;
     FuzzyNumber cbmDuration;
-    std::vector<ScheduleBlock> schedule;  // computed timeline
-    FuzzyNumber f1, f2, f;                // computed objectives
+    std::vector<ScheduleBlock> schedule;
+    std::vector<std::vector<ScheduleBlock>> tracks;
+    FuzzyNumber f1, f2, f;
 };

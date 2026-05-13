@@ -74,20 +74,29 @@ fun GanttChart(
                     .padding(top = 32.dp, bottom = 48.dp, start = 16.dp, end = 16.dp)
             ) {
                 Canvas(modifier = Modifier.fillMaxSize().padding(bottom = 16.dp)) {
-                    val maxTime = max(180.0, state.schedule.maxOfOrNull { it.endMax } ?: 180.0) + 10.0
-                    val pxPerUnit = size.width / maxTime.toFloat()
-                    
                     val tracksToDraw = state.tracks.ifEmpty { listOf(state.schedule) }
                     val numTracks = tracksToDraw.size
+
+                    // maxTime must cover the furthest block in any track (naive tracks can be wide)
+                    val allBlocks = tracksToDraw.flatten()
+                    val maxTime = maxOf(
+                        180.0,
+                        allBlocks.maxOfOrNull { it.endMax } ?: 180.0
+                    ) + 10.0
+                    val pxPerUnit = size.width / maxTime.toFloat()
                     
+                    // Layout constants — defined early so everything references them consistently
+                    val axisY = size.height - 12.dp.toPx()
+                    val labelWidth = 52.dp.toPx()
+                    val chartWidth = size.width - labelWidth
+
                     // Distribute tracks vertically
                     val trackHeight = 36.dp.toPx()
                     val totalTracksHeight = numTracks * trackHeight
                     val spacing = if (numTracks > 1) (size.height - totalTracksHeight - 40.dp.toPx()) / (numTracks - 1) else 0f
-                    
-                    // X-Axis at the bottom
-                    val axisY = size.height - 12.dp.toPx()
-                    drawLine(OutlineVariant, Offset(0f, axisY), Offset(size.width, axisY), 1.5f)
+
+                    // Axis arrow
+                    drawLine(OutlineVariant, Offset(labelWidth, axisY), Offset(size.width, axisY), 1.5f)
                     drawLine(OutlineVariant, Offset(size.width - 8f, axisY - 4f), Offset(size.width, axisY), 1.5f)
                     drawLine(OutlineVariant, Offset(size.width - 8f, axisY + 4f), Offset(size.width, axisY), 1.5f)
                     drawText(
@@ -97,10 +106,11 @@ fun GanttChart(
                         topLeft = Offset(size.width - 4f, axisY + 4f)
                     )
 
-                    // Real timing axis ticks (every 20 units)
-                    val tickInterval = 20
+                    // Real timing axis ticks — use chartWidth to match block positions
+                    val chartScaleAxis = (size.width - labelWidth) / maxTime.toFloat()
+                    val tickInterval = if (maxTime > 250) 40 else 20
                     for (t in 0..maxTime.toInt() step tickInterval) {
-                        val x = (t * pxPerUnit).toFloat()
+                        val x = labelWidth + (t * chartScaleAxis).toFloat()
                         drawLine(OnSurfaceVariant, Offset(x, axisY - 3f), Offset(x, axisY + 3f), 1f)
                         drawLine(OutlineVariant.copy(alpha = 0.2f), Offset(x, 0f), Offset(x, axisY),
                             0.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)))
@@ -115,15 +125,14 @@ fun GanttChart(
                     // Anomaly line and RUL Zone
                     if (state.currentStep >= 1) {
                         val alertTime = anomalyTimeInput.toDouble()
-                        val anomalyPx = (alertTime * pxPerUnit).toFloat()
+                        val chartScaleZ = (size.width - labelWidth) / maxTime.toFloat()
+                        val anomalyPx = labelWidth + (alertTime * chartScaleZ).toFloat()
                         
                         // RUL / RISK ZONE
-                        val rulMin =  100.0
-                        val rulProb =  120.0
-                        val rulMax = 140.0
-                        val rulMinPx = (rulMin * pxPerUnit).toFloat()
-                        val rulProbPx = (rulProb * pxPerUnit).toFloat()
-                        val rulMaxPx = (rulMax * pxPerUnit).toFloat()
+                        val rulMin  = 100.0
+                        val rulMax  = 140.0
+                        val rulMinPx = labelWidth + (rulMin * chartScaleZ).toFloat()
+                        val rulMaxPx = labelWidth + (rulMax * chartScaleZ).toFloat()
                         
                         // Shade min to max
                         drawRect(
@@ -171,30 +180,42 @@ fun GanttChart(
                         )
                     }
 
+                    // Descriptive step labels matching the paper's algorithm
+                    val trackLabels = when {
+                        numTracks >= 5 -> listOf(
+                            "(0) Initial", "(1) Fixed", "(2) Naive",
+                            *(List(numTracks - 4) { i -> "(${i + 3}) Pull" }.toTypedArray()),
+                            "(n) Result"
+                        )
+                        numTracks == 1 -> listOf("MS")
+                        else -> List(numTracks) { i -> "($i)" }
+                    }
+
                     // Draw each track
                     tracksToDraw.forEachIndexed { trackIdx, trackBlocks ->
                         val trackY = if (numTracks == 1) (size.height - trackHeight) / 2f else trackIdx * (trackHeight + spacing)
                         
-                        // Track label (0), (1), etc.
+                        // Track label
+                        val label = trackLabels.getOrElse(trackIdx) { "($trackIdx)" }
+                        val labelLayout = textMeasurer.measure(label, TextStyle(color = OnSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.SemiBold))
                         drawText(
-                            textMeasurer = textMeasurer,
-                            text = "(${trackIdx}) MS",
-                            style = TextStyle(color = OnSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
-                            topLeft = Offset(2f, trackY + trackHeight / 2 - 8f)
+                            textLayoutResult = labelLayout,
+                            topLeft = Offset(2f, trackY + trackHeight / 2 - labelLayout.size.height / 2f)
                         )
                         
-                        // Track base line
-                        drawLine(OutlineVariant, Offset(40.dp.toPx(), trackY + trackHeight), Offset(size.width, trackY + trackHeight), 1f)
+                        // Track base line (starts after label area)
+                        drawLine(OutlineVariant, Offset(labelWidth, trackY + trackHeight), Offset(size.width, trackY + trackHeight), 1f)
 
-                        // Blocks for this track
+                        // Blocks for this track — offset by labelWidth so blocks start after labels
                         trackBlocks.forEach { block ->
-                            val startPx = (block.startTime * pxPerUnit).toFloat()
-                            val widthPx = (block.duration * pxPerUnit).toFloat()
+                            val startPx = labelWidth + (block.startTime * (chartWidth / maxTime.toFloat())).toFloat()
+                            val widthPx = (block.duration * (chartWidth / maxTime.toFloat())).toFloat()
 
                             // Fuzzy range shading (lighter band for min/max)
+                            val chartScale = chartWidth / maxTime.toFloat()
                             if (block.startMin != block.startMax || block.endMin != block.endMax) {
-                                val fuzzyStartPx = (block.startMin * pxPerUnit).toFloat()
-                                val fuzzyEndPx = (block.endMax * pxPerUnit).toFloat()
+                                val fuzzyStartPx = labelWidth + (block.startMin * chartScale).toFloat()
+                                val fuzzyEndPx = labelWidth + (block.endMax * chartScale).toFloat()
                                 drawRect(
                                     color = when (block.type) {
                                         TaskType.CBM -> Tertiary.copy(alpha = 0.15f)
@@ -265,9 +286,9 @@ fun GanttChart(
                                 )
                             }
 
-                            // Deadline marker (small red triangle above block)
+                            // Deadline marker (red tick above block)
                             if (block.deadline != null && block.type == TaskType.PRODUCTION) {
-                                val dlPx = (block.deadline * pxPerUnit).toFloat()
+                                val dlPx = labelWidth + (block.deadline * chartScale).toFloat()
                                 if (dlPx >= startPx && dlPx <= startPx + widthPx + 20) {
                                     drawLine(Error.copy(0.6f), Offset(dlPx, trackY - 8f), Offset(dlPx, trackY), 1.5f)
                                 }
