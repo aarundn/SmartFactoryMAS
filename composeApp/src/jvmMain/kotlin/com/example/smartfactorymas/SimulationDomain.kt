@@ -115,9 +115,6 @@ class SimulationDomain {
         val finalFixedBlocks = finalEngineSchedule.filter { it.type == TaskType.CBM || it.type == TaskType.TBM }
 
         // Jobs that finished before CBM (like P4)
-        val unaffectedJobs = initialSchedule.filter {
-            it.type == TaskType.PRODUCTION && it.endTime <= cbmStart
-        }
 
         // Original order (P3 -> P2 -> P1)
         val originalAffectedJobs = initialSchedule.filter {
@@ -130,7 +127,7 @@ class SimulationDomain {
         tracks.add(initialSchedule)
 
         // Track 1: CBM Inserted
-        tracks.add(unaffectedJobs + finalFixedBlocks)
+        tracks.add(finalFixedBlocks)
 
         // Track 2: Naive Sequential Push
         var cursor = cbmStart + cbmDuration
@@ -151,7 +148,7 @@ class SimulationDomain {
             ))
             cursor += job.duration
         }
-        tracks.add(unaffectedJobs + finalFixedBlocks + naiveJobs)
+        tracks.add( finalFixedBlocks + naiveJobs)
 
         // Track 3..N: Pulling to Optimal
         val optimalAffectedJobs = finalEngineSchedule.filter {
@@ -163,10 +160,10 @@ class SimulationDomain {
             currentTrackJobs = currentTrackJobs.map {
                 if (it.id == optimizedJob.id) optimizedJob else it
             }
-            tracks.add(unaffectedJobs + finalFixedBlocks + currentTrackJobs)
+            tracks.add( finalFixedBlocks + currentTrackJobs)
         }
 
-        val completeFinalSchedule = unaffectedJobs + finalEngineSchedule
+        val completeFinalSchedule =  finalEngineSchedule
         if (tracks.last() != completeFinalSchedule) {
             tracks.add(completeFinalSchedule)
         }

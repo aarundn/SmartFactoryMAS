@@ -42,7 +42,6 @@ object CliInterop {
         reader.forEachLine { line ->
             if (line.isBlank()) return@forEachLine
 
-            // Route based on the "type" field in each JSON line
             try {
                 when {
                     line.contains("\"type\":\"log\"") -> {
@@ -54,20 +53,37 @@ object CliInterop {
                         val event = json.decodeFromString<ProposalEvent>(line)
                         onEvent(event)
                     }
-                    line.contains("\"type\":\"result\"") -> {
-                        val event = json.decodeFromString<ResultEvent>(line)
+                    // FIX: detect BOTH "type":"result" AND the legacy JSON_RESULT: prefix
+                    line.contains("\"type\":\"result\"") || line.startsWith("JSON_RESULT:") -> {
+                        // Strip the prefix if present
+                        val stripped = if (line.startsWith("JSON_RESULT:"))
+                            line.removePrefix("JSON_RESULT:")
+                        else
+                            line
+
+                        // If the old binary omitted "type":"result", inject it so
+                        // kotlinx.serialization can discriminate the sealed class
+                        val jsonToparse = if (!stripped.contains("\"type\""))
+                            stripped.replaceFirst("{", "{\"type\":\"result\",")
+                        else
+                            stripped
+
+                        val event = json.decodeFromString<ResultEvent>(jsonToparse)
                         resultEvent = event
                         onEvent(event)
                     }
                     else -> {
-                        // Non-JSON line (unlikely) — log it for visibility
                         val fallback = LogEvent(agent = "SYS", msg = line, level = "warn")
                         logEvents.add(fallback)
                         onEvent(fallback)
                     }
                 }
             } catch (e: Exception) {
-                val fallback = LogEvent(agent = "SYS", msg = "Parse error: ${e.message} | line=$line", level = "error")
+                val fallback = LogEvent(
+                    agent = "SYS",
+                    msg = "Parse error: ${e.message} | line=${line.take(120)}",
+                    level = "error"
+                )
                 logEvents.add(fallback)
                 onEvent(fallback)
             }

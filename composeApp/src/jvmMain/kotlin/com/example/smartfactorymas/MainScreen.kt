@@ -77,7 +77,7 @@ fun MainScreen() {
 
             try {
                 val input = buildEngineInput()
-                withContext(Dispatchers.IO) {
+                val engineRes = withContext(Dispatchers.IO) {
                     domain.runEngine(input) { event ->
                         // Live stream events to UI
                         scope.launch {
@@ -87,8 +87,27 @@ fun MainScreen() {
                         }
                     }
                 }
-                selectedProposal = 0
-                ganttState = domain.buildResultState(0)
+
+                // التعديل هنا: التعامل الذكي مع النتيجة وتحديد الفني الفائز
+                val output = engineRes.output
+                if (output.proposals.isEmpty()) {
+                    // لم يوافق أي فني على الصيانة (مثلاً الوقت متأخر جداً)
+                    ganttState = ganttState.copy(
+                        logs = ganttState.logs + LogEvent(
+                            agent = "SYS",
+                            msg = "System aborted: No available technicians for anomaly at t=$anomalyTime",
+                            level = "error"
+                        )
+                    )
+                } else {
+                    // البحث عن الفني الفائز واختيار التبويبة (Tab) الخاصة به أوتوماتيكياً
+                    val chosenId = output.chosenArh
+                    val chosenIdx = output.proposals.indexOfFirst { it.arhId == chosenId }.coerceAtLeast(0)
+
+                    selectedProposal = chosenIdx
+                    ganttState = domain.buildResultState(chosenIdx)
+                }
+
             } catch (e: Exception) {
                 ganttState = ganttState.copy(
                     logs = ganttState.logs + LogEvent(agent = "SYS", msg = "ERROR: ${e.message}", level = "error")

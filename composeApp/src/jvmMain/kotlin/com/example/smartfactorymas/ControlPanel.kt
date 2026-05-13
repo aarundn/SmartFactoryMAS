@@ -105,19 +105,93 @@ fun ControlPanel(
         }
 
         // ARH MANAGER
+        // ARH MANAGER
         Column(modifier = Modifier.fillMaxWidth()) {
-            Text("ARH MANAGER", color = OnSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
-            
-            // Custom ARH rendering to match mockup
-            Column(modifier = Modifier.fillMaxWidth().background(Color(0xFFE0E7FF), RoundedCornerShape(4.dp)).border(1.dp, Color(0xFFC7D2FE), RoundedCornerShape(4.dp)).padding(12.dp)) {
-                Text("ARH1   Spd: 1.2x |", color = Color(0xFF1E3A8A), fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                Text("(Active) Avail: 100%", color = Color(0xFF1E3A8A), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Text(
+                "ARH MANAGER",
+                color = OnSurfaceVariant,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
+            arhs.forEachIndexed { index, arh ->
+                // Mirror the C++ validity logic exactly
+                val actualStart = maxOf(arh.availStart, anomalyTime.toDouble())
+                val expectedFinish = actualStart + arh.durProb
+                val isValid = actualStart < arh.availEnd && expectedFinish <= arh.availEnd
+
+                val bgColor   = if (isValid) Color(0xFFE0E7FF) else Color(0xFFF1F5F9)
+                val borderColor = if (isValid) Color(0xFFC7D2FE) else Color(0xFFCBD5E1)
+                val textColor = if (isValid) Color(0xFF1E3A8A) else Color(0xFF94A3B8)
+                val statusLabel = when {
+                    isValid && actualStart <= arh.availStart -> "Ready at t=${arh.availStart.toInt()}"
+                    isValid -> "Earliest start t=${actualStart.toInt()}"
+                    arh.availEnd <= anomalyTime -> "Window expired (ended t=${arh.availEnd.toInt()})"
+                    else -> "Cannot finish before t=${arh.availEnd.toInt()}"
+                }
+                val statusTag = if (isValid) "✓ Valid" else "✗ Invalid"
+                val tagBg    = if (isValid) Color(0xFF4F46E5) else Color(0xFFEF4444)
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = if (index < arhs.lastIndex) 10.dp else 0.dp)
+                        .background(bgColor, RoundedCornerShape(6.dp))
+                        .border(1.dp, borderColor, RoundedCornerShape(6.dp))
+                        .padding(12.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            arh.id,
+                            color = textColor,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Box(
+                            modifier = Modifier
+                                .background(tagBg, RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(statusTag, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    Text(
+                        "Avail: [${arh.availStart.toInt()} → ${arh.availEnd.toInt()}]  " +
+                                "Dur: (${arh.durMin.toInt()}, ${arh.durProb.toInt()}, ${arh.durMax.toInt()})",
+                        color = textColor.copy(alpha = 0.75f),
+                        fontSize = 11.sp
+                    )
+                    Text(
+                        statusLabel,
+                        color = if (isValid) Color(0xFF4F46E5) else Color(0xFFEF4444),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
             }
-            Spacer(Modifier.height(12.dp))
-            Column(modifier = Modifier.fillMaxWidth().background(Color(0xFFFFEDD5), RoundedCornerShape(4.dp)).border(1.dp, Color(0xFFFDBA74), RoundedCornerShape(4.dp)).padding(12.dp)) {
-                Text("ARH2   Spd: 1.0x |", color = Color(0xFF9A3412), fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                Text("(Standby) Avail: 85%", color = Color(0xFF9A3412), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+
+            // Summary line
+            val validCount = arhs.count { arh ->
+                val actualStart = maxOf(arh.availStart, anomalyTime.toDouble())
+                val expectedFinish = actualStart + arh.durProb
+                actualStart < arh.availEnd && expectedFinish <= arh.availEnd
             }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "$validCount / ${arhs.size} technician(s) eligible for anomaly at t=$anomalyTime",
+                color = if (validCount > 0) Color(0xFF4F46E5) else Color(0xFFEF4444),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
