@@ -175,7 +175,7 @@ private:
     void emitResultJson(const std::vector<CBMProposal>& proposals, const std::string& chosen) {
         std::ostringstream j;
         // FIX: Re-added 'JSON_RESULT:' so Kotlin's BufferedReader finds the line successfully
-        j << "{\"type\":\"result\",\"chosen_arh\":\"" << chosen << "\",\"w1\":" << w1
+        j << "JSON_RESULT:{\"type\":\"result\",\"chosen_arh\":\"" << chosen << "\",\"w1\":" << w1
           << ",\"w2\":" << w2 << ",\"alert_time\":" << alertTime
           << ",\"proposals\":[";
 

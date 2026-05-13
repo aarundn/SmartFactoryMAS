@@ -34,14 +34,17 @@ import kotlin.math.max
 @Composable
 fun GanttChart(
     state: GanttState,
-    anomalyTimeInput: Int,
+    anomalyTime: Double,
     onPreviousStep: () -> Unit,
     onNextStep: () -> Unit,
     isAutoRunning: Boolean,
     modifier: Modifier = Modifier
 ) {
     DashboardCard(modifier = modifier) {
-        Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             // Title with selected ARH info
             val title = if (state.masOutput != null && state.masOutput.proposals.isNotEmpty()) {
                 val prop = state.masOutput.proposals.getOrNull(state.selectedProposalIdx)
@@ -60,7 +63,12 @@ fun GanttChart(
                 else -> ""
             }
             if (subtitle.isNotEmpty()) {
-                Text(subtitle, color = OnSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
+                Text(
+                    subtitle,
+                    color = OnSurfaceVariant,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
+                )
             } else {
                 Spacer(Modifier.height(16.dp))
             }
@@ -84,7 +92,7 @@ fun GanttChart(
                         allBlocks.maxOfOrNull { it.endMax } ?: 180.0
                     ) + 10.0
                     val pxPerUnit = size.width / maxTime.toFloat()
-                    
+
                     // Layout constants — defined early so everything references them consistently
                     val axisY = size.height - 12.dp.toPx()
                     val labelWidth = 52.dp.toPx()
@@ -93,12 +101,28 @@ fun GanttChart(
                     // Distribute tracks vertically
                     val trackHeight = 36.dp.toPx()
                     val totalTracksHeight = numTracks * trackHeight
-                    val spacing = if (numTracks > 1) (size.height - totalTracksHeight - 40.dp.toPx()) / (numTracks - 1) else 0f
+                    val spacing =
+                        if (numTracks > 1) (size.height - totalTracksHeight - 40.dp.toPx()) / (numTracks - 1) else 0f
 
                     // Axis arrow
-                    drawLine(OutlineVariant, Offset(labelWidth, axisY), Offset(size.width, axisY), 1.5f)
-                    drawLine(OutlineVariant, Offset(size.width - 8f, axisY - 4f), Offset(size.width, axisY), 1.5f)
-                    drawLine(OutlineVariant, Offset(size.width - 8f, axisY + 4f), Offset(size.width, axisY), 1.5f)
+                    drawLine(
+                        OutlineVariant,
+                        Offset(labelWidth, axisY),
+                        Offset(size.width, axisY),
+                        1.5f
+                    )
+                    drawLine(
+                        OutlineVariant,
+                        Offset(size.width - 8f, axisY - 4f),
+                        Offset(size.width, axisY),
+                        1.5f
+                    )
+                    drawLine(
+                        OutlineVariant,
+                        Offset(size.width - 8f, axisY + 4f),
+                        Offset(size.width, axisY),
+                        1.5f
+                    )
                     drawText(
                         textMeasurer = textMeasurer,
                         text = "t",
@@ -112,10 +136,15 @@ fun GanttChart(
                     for (t in 0..maxTime.toInt() step tickInterval) {
                         val x = labelWidth + (t * chartScaleAxis).toFloat()
                         drawLine(OnSurfaceVariant, Offset(x, axisY - 3f), Offset(x, axisY + 3f), 1f)
-                        drawLine(OutlineVariant.copy(alpha = 0.2f), Offset(x, 0f), Offset(x, axisY),
-                            0.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)))
-                        
-                        val textLayout = textMeasurer.measure("$t", TextStyle(color = OnSurfaceVariant, fontSize = 10.sp))
+                        drawLine(
+                            OutlineVariant.copy(alpha = 0.2f), Offset(x, 0f), Offset(x, axisY),
+                            0.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f))
+                        )
+
+                        val textLayout = textMeasurer.measure(
+                            "$t",
+                            TextStyle(color = OnSurfaceVariant, fontSize = 10.sp)
+                        )
                         drawText(
                             textLayoutResult = textLayout,
                             topLeft = Offset(x - textLayout.size.width / 2f, axisY + 6f)
@@ -124,16 +153,16 @@ fun GanttChart(
 
                     // Anomaly line and RUL Zone
                     if (state.currentStep >= 1) {
-                        val alertTime = anomalyTimeInput.toDouble()
+                        val alertTime = anomalyTime
                         val chartScaleZ = (size.width - labelWidth) / maxTime.toFloat()
                         val anomalyPx = labelWidth + (alertTime * chartScaleZ).toFloat()
-                        
-                        // RUL / RISK ZONE
-                        val rulMin  = 100.0
-                        val rulMax  = 140.0
+
+                        // RUL range
+                        val rulMin = state.rulMin // Formerly hardcoded 100.0
+                        val rulMax = state.rulMax // Formerly hardcoded 140.0
                         val rulMinPx = labelWidth + (rulMin * chartScaleZ).toFloat()
                         val rulMaxPx = labelWidth + (rulMax * chartScaleZ).toFloat()
-                        
+
                         // Shade min to max
                         drawRect(
                             color = Error.copy(alpha = 0.06f),
@@ -142,14 +171,36 @@ fun GanttChart(
                         )
 
                         // Vertical dashed lines
-                        drawLine(Error.copy(alpha = 0.4f), Offset(rulMinPx, 0f), Offset(rulMinPx, size.height + 50), 1f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)))
-                        drawLine(Error.copy(alpha = 0.4f), Offset(rulMaxPx, 0f), Offset(rulMaxPx, size.height + 50), 1f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)))
+                        drawLine(
+                            Error.copy(alpha = 0.4f),
+                            Offset(rulMinPx, 0f),
+                            Offset(rulMinPx, size.height + 50),
+                            1f,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f))
+                        )
+                        drawLine(
+                            Error.copy(alpha = 0.4f),
+                            Offset(rulMaxPx, 0f),
+                            Offset(rulMaxPx, size.height + 50),
+                            1f,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f))
+                        )
 
 
-                        val riskZoneText = textMeasurer.measure("RISK ZONE", TextStyle(color = Error.copy(alpha = 0.9f), fontSize = 11.sp, fontWeight = FontWeight.Bold))
+                        val riskZoneText = textMeasurer.measure(
+                            "RISK ZONE",
+                            TextStyle(
+                                color = Error.copy(alpha = 0.9f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
                         drawText(
                             textLayoutResult = riskZoneText,
-                            topLeft = Offset(rulMinPx + (rulMaxPx - rulMinPx - riskZoneText.size.width) / 2f, size.height + 15)
+                            topLeft = Offset(
+                                rulMinPx + (rulMaxPx - rulMinPx - riskZoneText.size.width) / 2f,
+                                size.height + 15
+                            )
                         )
 
                         // Zigzag Signal d'anomalie
@@ -160,8 +211,15 @@ fun GanttChart(
                             lineTo(anomalyPx, 45f)
                             lineTo(anomalyPx, axisY)
                         }
-                        drawPath(zigzagPath, Error, style = Stroke(1.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f))))
-                        
+                        drawPath(
+                            zigzagPath,
+                            Error,
+                            style = Stroke(
+                                1.5f,
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f))
+                            )
+                        )
+
                         // Arrow head
                         val arrowSize = 5.dp.toPx()
                         val arrowPath = Path().apply {
@@ -171,11 +229,15 @@ fun GanttChart(
                             close()
                         }
                         drawPath(arrowPath, Error)
-                        
+
                         drawText(
                             textMeasurer = textMeasurer,
                             text = "Signal d'anomalie",
-                            style = TextStyle(color = Error, fontSize = 11.sp, fontWeight = FontWeight.Medium),
+                            style = TextStyle(
+                                color = Error,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
                             topLeft = Offset(anomalyPx + 12f, 16f)
                         )
                     }
@@ -187,34 +249,54 @@ fun GanttChart(
                             *(List(numTracks - 4) { i -> "(${i + 3}) Pull" }.toTypedArray()),
                             "(n) Result"
                         )
+
                         numTracks == 1 -> listOf("MS")
                         else -> List(numTracks) { i -> "($i)" }
                     }
 
                     // Draw each track
                     tracksToDraw.forEachIndexed { trackIdx, trackBlocks ->
-                        val trackY = if (numTracks == 1) (size.height - trackHeight) / 2f else trackIdx * (trackHeight + spacing)
-                        
+                        val trackY =
+                            if (numTracks == 1) (size.height - trackHeight) / 2f else trackIdx * (trackHeight + spacing)
+
                         // Track label
                         val label = trackLabels.getOrElse(trackIdx) { "($trackIdx)" }
-                        val labelLayout = textMeasurer.measure(label, TextStyle(color = OnSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.SemiBold))
+                        val labelLayout = textMeasurer.measure(
+                            label,
+                            TextStyle(
+                                color = OnSurfaceVariant,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        )
                         drawText(
                             textLayoutResult = labelLayout,
-                            topLeft = Offset(2f, trackY + trackHeight / 2 - labelLayout.size.height / 2f)
+                            topLeft = Offset(
+                                2f,
+                                trackY + trackHeight / 2 - labelLayout.size.height / 2f
+                            )
                         )
-                        
+
                         // Track base line (starts after label area)
-                        drawLine(OutlineVariant, Offset(labelWidth, trackY + trackHeight), Offset(size.width, trackY + trackHeight), 1f)
+                        drawLine(
+                            OutlineVariant,
+                            Offset(labelWidth, trackY + trackHeight),
+                            Offset(size.width, trackY + trackHeight),
+                            1f
+                        )
 
                         // Blocks for this track — offset by labelWidth so blocks start after labels
                         trackBlocks.forEach { block ->
-                            val startPx = labelWidth + (block.startTime * (chartWidth / maxTime.toFloat())).toFloat()
-                            val widthPx = (block.duration * (chartWidth / maxTime.toFloat())).toFloat()
+                            val startPx =
+                                labelWidth + (block.startTime * (chartWidth / maxTime.toFloat())).toFloat()
+                            val widthPx =
+                                (block.duration * (chartWidth / maxTime.toFloat())).toFloat()
 
                             // Fuzzy range shading (lighter band for min/max)
                             val chartScale = chartWidth / maxTime.toFloat()
                             if (block.startMin != block.startMax || block.endMin != block.endMax) {
-                                val fuzzyStartPx = labelWidth + (block.startMin * chartScale).toFloat()
+                                val fuzzyStartPx =
+                                    labelWidth + (block.startMin * chartScale).toFloat()
                                 val fuzzyEndPx = labelWidth + (block.endMax * chartScale).toFloat()
                                 drawRect(
                                     color = when (block.type) {
@@ -232,23 +314,37 @@ fun GanttChart(
                                 TaskType.TBM -> SurfaceContainerHighest
                             }
 
-                            drawRect(blockColor, Offset(startPx, trackY), Size(widthPx, trackHeight))
+                            drawRect(
+                                blockColor,
+                                Offset(startPx, trackY),
+                                Size(widthPx, trackHeight)
+                            )
 
                             // TBM crosshatch
                             if (block.type == TaskType.TBM) {
                                 val hatchSpacing = 5.dp.toPx()
                                 var ly = trackY + hatchSpacing
                                 while (ly < trackY + trackHeight) {
-                                    drawLine(OnSurfaceVariant.copy(0.3f), Offset(startPx, ly), Offset(startPx + widthPx, ly), 0.8f)
+                                    drawLine(
+                                        OnSurfaceVariant.copy(0.3f),
+                                        Offset(startPx, ly),
+                                        Offset(startPx + widthPx, ly),
+                                        0.8f
+                                    )
                                     ly += hatchSpacing
                                 }
                                 var lx = startPx + hatchSpacing
                                 while (lx < startPx + widthPx) {
-                                    drawLine(OnSurfaceVariant.copy(0.3f), Offset(lx, trackY), Offset(lx, trackY + trackHeight), 0.8f)
+                                    drawLine(
+                                        OnSurfaceVariant.copy(0.3f),
+                                        Offset(lx, trackY),
+                                        Offset(lx, trackY + trackHeight),
+                                        0.8f
+                                    )
                                     lx += hatchSpacing
                                 }
                             }
-                            
+
                             // CBM diagonal stripes
                             if (block.type == TaskType.CBM) {
                                 val hatchSpacing = 6.dp.toPx()
@@ -257,17 +353,28 @@ fun GanttChart(
                                     val startX = maxOf(startPx, startPx + d)
                                     val startY = if (d < 0) trackY - d else trackY
                                     val endX = minOf(startPx + widthPx, startPx + d + trackHeight)
-                                    val endY = if (d + trackHeight > widthPx) trackY + (startPx + widthPx - (startPx + d)) else trackY + trackHeight
-                                    
+                                    val endY =
+                                        if (d + trackHeight > widthPx) trackY + (startPx + widthPx - (startPx + d)) else trackY + trackHeight
+
                                     if (startX <= endX) {
-                                        drawLine(OnTertiary.copy(0.5f), Offset(startX, startY), Offset(endX, endY), 1.dp.toPx())
+                                        drawLine(
+                                            OnTertiary.copy(0.5f),
+                                            Offset(startX, startY),
+                                            Offset(endX, endY),
+                                            1.dp.toPx()
+                                        )
                                     }
                                     d += hatchSpacing
                                 }
                             }
 
                             // Border
-                            drawRect(SurfaceContainerLowest.copy(0.6f), Offset(startPx, trackY), Size(widthPx, trackHeight), style = Stroke(1.dp.toPx()))
+                            drawRect(
+                                SurfaceContainerLowest.copy(0.6f),
+                                Offset(startPx, trackY),
+                                Size(widthPx, trackHeight),
+                                style = Stroke(1.dp.toPx())
+                            )
 
                             // Label
                             val textColor = when (block.type) {
@@ -275,7 +382,14 @@ fun GanttChart(
                                 TaskType.PRODUCTION -> OnPrimary
                                 TaskType.CBM -> OnTertiary
                             }
-                            val textLayout = textMeasurer.measure(block.id, TextStyle(color = textColor, fontSize = 12.sp, fontWeight = FontWeight.Bold))
+                            val textLayout = textMeasurer.measure(
+                                block.id,
+                                TextStyle(
+                                    color = textColor,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
                             if (widthPx > textLayout.size.width + 4f) {
                                 drawText(
                                     textLayoutResult = textLayout,
@@ -290,7 +404,12 @@ fun GanttChart(
                             if (block.deadline != null && block.type == TaskType.PRODUCTION) {
                                 val dlPx = labelWidth + (block.deadline * chartScale).toFloat()
                                 if (dlPx >= startPx && dlPx <= startPx + widthPx + 20) {
-                                    drawLine(Error.copy(0.6f), Offset(dlPx, trackY - 8f), Offset(dlPx, trackY), 1.5f)
+                                    drawLine(
+                                        Error.copy(0.6f),
+                                        Offset(dlPx, trackY - 8f),
+                                        Offset(dlPx, trackY),
+                                        1.5f
+                                    )
                                 }
                             }
                         }

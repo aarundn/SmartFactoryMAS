@@ -86,16 +86,17 @@ fun CommunicationLog(
     }
 }
 
-fun agentColor(agent: String): Color = when (agent) {
-    "AMS"  -> Color(0xFF60A5FA)   // Blue-400
-    "AMC"  -> Color(0xFFFBBF24)   // Amber-400
-    "ASRH" -> Color(0xFF34D399)   // Emerald-400
-    "SYS"  -> Color(0xFF94A3B8)   // Slate-400
-    else   -> if (agent.startsWith("ARH")) Color(0xFFA78BFA) else Color(0xFFCBD5E1)
+fun agentColor(agent: String): Color = when {
+    agent == "AMC"  -> Color(0xFFF59E0B)   // Amber-500 (Vibrant Orange/Yellow)
+    agent == "ASRH" -> Color(0xFF10B981)   // Emerald-500 (Vibrant Green)
+    agent == "AMS"  -> Color(0xFF3B82F6)   // Blue-500
+    agent == "SYS"  -> Color(0xFF64748B)   // Slate-500 (Gray)
+    agent.startsWith("ARH") -> Color(0xFFD946EF) // Fuchsia-500 (Pink/Purple)
+    else -> Color(0xFFA1A1AA)
 }
 
 fun levelColor(level: String): Color = when (level) {
     "warn"  -> Color(0xFFFBBF24)
     "error" -> Color(0xFFF87171)
-    else    -> Color(0xFFCBD5E1)
+    else    -> Color(0xFFE2E8F0) // Brighter text for console background
 }

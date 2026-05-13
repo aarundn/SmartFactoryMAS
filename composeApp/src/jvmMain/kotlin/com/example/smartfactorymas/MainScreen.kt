@@ -35,83 +35,60 @@ fun MainScreen() {
 
     var strategy by remember { mutableStateOf("SOM") }
     var w1 by remember { mutableStateOf(0.75f) }
-    var anomalyTime by remember { mutableStateOf(8) }
-    var severity by remember { mutableStateOf(0.7f) }
-    var cbmBaseDur by remember { mutableStateOf(7) }
-    var arhs by remember {
-        mutableStateOf(listOf(
-            ArhUiState("ARH_1", 24.0, 50.0, 4.0, 7.0, 9.0),
-            ArhUiState("ARH_2", 103.0, 140.0, 3.0, 6.0, 9.0)
-        ))
-    }
+    var anomalyTime by remember { mutableStateOf(8.0) }
+    var schedulingStart by remember { mutableStateOf(24.0) }
 
-    var ganttState by remember { mutableStateOf(domain.buildInitialState()) }
+    // RUL State
+    var rulMin by remember { mutableStateOf(100.0) }
+    var rulProb by remember { mutableStateOf(120.0) }
+    var rulMax by remember { mutableStateOf(140.0) }
+
+    // Dynamic Lists
+    var jobs by remember { mutableStateOf(listOf(JobInput("P3", 46.0, 40.0), JobInput("P2", 6.0, 93.0), JobInput("P1", 21.0, 110.0))) }
+    var tbms by remember { mutableStateOf(listOf(TbmInput("M1", 70.0, 90.0), TbmInput("M2", 96.0, 103.0))) }
+    var arhs by remember { mutableStateOf(listOf(
+        ArhUiState("ARH_1", 24.0, 50.0, 4.0, 7.0, 9.0),
+        ArhUiState("ARH_2", 103.0, 140.0, 3.0, 6.0, 9.0)
+    )) }
+
     var isAutoRunning by remember { mutableStateOf(false) }
     var selectedProposal by remember { mutableStateOf(0) }
 
-    fun buildEngineInput(): EngineInput = EngineInput(
-        strategy = strategy,
-        alertTime = anomalyTime.toDouble(),
-        schedulingStart = 24.0,
-        w1 = w1.toDouble(),
-        w2 = (1.0 - w1).toDouble(),
-        jobs = listOf(
-            JobInput("P3", 46.0, 40.0),
-            JobInput("P2", 6.0, 93.0),
-            JobInput("P1", 21.0, 110.0)
-        ),
-        tbmBlocks = listOf(
-            TbmInput("M1", 70.0, 90.0),
-            TbmInput("M2", 96.0, 103.0)
-        ),
-        arhAgents = arhs.map { ArhInput(it.id, it.availStart, it.availEnd, it.durMin, it.durProb, it.durMax) }
-    )
+    // Reactive State Regeneration for Gantt
+    var ganttState by remember { mutableStateOf(domain.buildInitialState(jobs, tbms, schedulingStart, rulMin, rulMax)) }
+
+    // Triggers redraw of Initial Schedule when lists change
+    LaunchedEffect(jobs, tbms, schedulingStart, rulMin, rulMax) {
+        if (!isAutoRunning && ganttState.masOutput == null) {
+            ganttState = domain.buildInitialState(jobs, tbms, schedulingStart, rulMin, rulMax)
+        }
+    }
 
     fun runAutoSimulation() {
         if (isAutoRunning) return
         scope.launch {
             isAutoRunning = true
-
-            ganttState = domain.buildAnomalyState()
+            ganttState = domain.buildAnomalyState(jobs, tbms, schedulingStart, anomalyTime, rulMin, rulMax)
             delay(1000)
 
             try {
-                val input = buildEngineInput()
+                val input = EngineInput(strategy, anomalyTime, schedulingStart, w1.toDouble(), (1.0 - w1).toDouble(), rulMin, rulProb, rulMax, jobs, tbms, arhs.map { ArhInput(it.id, it.availStart, it.availEnd, it.durMin, it.durProb, it.durMax) })
                 val engineRes = withContext(Dispatchers.IO) {
                     domain.runEngine(input) { event ->
-                        // Live stream events to UI
-                        scope.launch {
-                            if (event is LogEvent) {
-                                ganttState = ganttState.copy(logs = ganttState.logs + event)
-                            }
-                        }
+                        scope.launch { if (event is LogEvent) ganttState = ganttState.copy(logs = ganttState.logs + event) }
                     }
                 }
 
-                // التعديل هنا: التعامل الذكي مع النتيجة وتحديد الفني الفائز
-                val output = engineRes.output
-                if (output.proposals.isEmpty()) {
-                    // لم يوافق أي فني على الصيانة (مثلاً الوقت متأخر جداً)
-                    ganttState = ganttState.copy(
-                        logs = ganttState.logs + LogEvent(
-                            agent = "SYS",
-                            msg = "System aborted: No available technicians for anomaly at t=$anomalyTime",
-                            level = "error"
-                        )
-                    )
+                val out = engineRes.output
+                if (out.proposals.isEmpty()) {
+                    ganttState = ganttState.copy(logs = ganttState.logs + LogEvent(agent = "SYS", msg = "Aborted: No valid ARH.", level = "error"))
                 } else {
-                    // البحث عن الفني الفائز واختيار التبويبة (Tab) الخاصة به أوتوماتيكياً
-                    val chosenId = output.chosenArh
-                    val chosenIdx = output.proposals.indexOfFirst { it.arhId == chosenId }.coerceAtLeast(0)
-
+                    val chosenIdx = out.proposals.indexOfFirst { it.arhId == out.chosenArh }.coerceAtLeast(0)
                     selectedProposal = chosenIdx
-                    ganttState = domain.buildResultState(chosenIdx)
+                    ganttState = domain.buildResultState(chosenIdx, rulMin, rulMax, domain.calculateInitialSchedule(jobs, tbms, schedulingStart))
                 }
-
             } catch (e: Exception) {
-                ganttState = ganttState.copy(
-                    logs = ganttState.logs + LogEvent(agent = "SYS", msg = "ERROR: ${e.message}", level = "error")
-                )
+                ganttState = ganttState.copy(logs = ganttState.logs + LogEvent(agent = "SYS", msg = "ERROR: ${e.message}", level = "error"))
             }
             isAutoRunning = false
         }
@@ -119,9 +96,9 @@ fun MainScreen() {
 
     var leftExpanded by remember { mutableStateOf(true) }
     var rightExpanded by remember { mutableStateOf(true) }
-    var leftBaseWidth by remember { mutableStateOf(200.dp) }
+    var leftBaseWidth by remember { mutableStateOf(300.dp) } // Made wider to accommodate fields
     var rightBaseWidth by remember { mutableStateOf(400.dp) }
-    
+
     val leftCurrentWidth by animateDpAsState(if (leftExpanded) leftBaseWidth else 48.dp)
     val rightCurrentWidth by animateDpAsState(if (rightExpanded) rightBaseWidth else 48.dp)
     val density = LocalDensity.current
@@ -131,144 +108,65 @@ fun MainScreen() {
 
         Column(modifier = Modifier.fillMaxSize().weight(1f)) {
             TopHeader()
+            Row(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
 
-            Row(
-                modifier = Modifier.fillMaxSize().padding(24.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // ── Left: Control Panel ──
+                // LEFT PANEL (Control Panel)
                 Column(modifier = Modifier.width(leftCurrentWidth).fillMaxHeight()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                        horizontalArrangement = if (leftExpanded) Arrangement.End else Arrangement.Center
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = if (leftExpanded) Arrangement.End else Arrangement.Center) {
                         IconButton(onClick = { leftExpanded = !leftExpanded }, modifier = Modifier.size(36.dp)) {
-                            Icon(if (leftExpanded) Icons.Default.KeyboardDoubleArrowLeft else Icons.Default.KeyboardDoubleArrowRight, "Toggle Left Panel")
+                            Icon(if (leftExpanded) Icons.Default.KeyboardDoubleArrowLeft else Icons.Default.KeyboardDoubleArrowRight, "")
                         }
                     }
                     if (leftExpanded) {
-                        val scrollState = rememberScrollState()
-                        Column(modifier = Modifier.verticalScroll(scrollState)) {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                             ControlPanel(
-                                selectedStrategy = strategy,
-                                onStrategyChange = { strategy = it },
-                                w1 = w1,
-                                onW1Change = { w1 = it },
-                                anomalyTime = anomalyTime,
-                                onAnomalyTimeChange = { anomalyTime = it },
-                                anomalySeverity = severity,
-                                onSeverityChange = { severity = it },
-                                cbmBaseDuration = cbmBaseDur,
-                                onCbmBaseChange = { cbmBaseDur = it },
-                                arhs = arhs,
-                                onArhsChange = { arhs = it },
-                                onSimulateClick = ::runAutoSimulation
+                                strategy, { strategy = it }, w1, { w1 = it },
+                                anomalyTime, { anomalyTime = it }, schedulingStart, { schedulingStart = it },
+                                rulMin, { rulMin = it }, rulProb, { rulProb = it }, rulMax, { rulMax = it },
+                                jobs, { jobs = it; ganttState = ganttState.copy(masOutput = null) },
+                                tbms, { tbms = it; ganttState = ganttState.copy(masOutput = null) },
+                                arhs, { arhs = it },
+                                ::runAutoSimulation
                             )
                         }
                     }
                 }
 
-                // Splitter Left
-                if (leftExpanded) {
-                    Box(modifier = Modifier
-                        .fillMaxHeight()
-                        .width(4.dp)
-                        .background(OutlineVariant.copy(0.5f))
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures { change, dragAmount ->
-                                change.consume()
-                                val dragDp = with(density) { dragAmount.toDp() }
-                                leftBaseWidth = (leftBaseWidth + dragDp).coerceIn(250.dp, 600.dp)
-                            }
-                        }
-                    )
-                }
+                if (leftExpanded) Box(modifier = Modifier.fillMaxHeight().width(4.dp).background(OutlineVariant.copy(0.5f)).pointerInput(Unit) {
+                    detectHorizontalDragGestures { change, dragAmount -> change.consume(); leftBaseWidth = (leftBaseWidth + with(density) { dragAmount.toDp() }).coerceIn(250.dp, 600.dp) }
+                })
 
-                // ── Center: Gantt Chart with proposal tabs ──
+                // CENTER PANEL (Gantt)
                 Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                    // Proposal selector tabs (if we have results)
-                    val output = ganttState.masOutput
-                    if (output != null && output.proposals.size > 1) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            output.proposals.forEachIndexed { idx, prop ->
-                                val isChosen = prop.arhId == output.chosenArh
-                                val isSelected = idx == selectedProposal
+                    ganttState.masOutput?.let { out ->
+                        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            out.proposals.forEachIndexed { idx, prop ->
+                                val isChosen = prop.arhId == out.chosenArh
                                 FilterChip(
-                                    selected = isSelected,
-                                    onClick = {
-                                        selectedProposal = idx
-                                        ganttState = domain.buildResultState(idx)
-                                    },
-                                    label = {
-                                        Text(
-                                            "${prop.arhId}${if (isChosen) " ★" else ""}",
-                                            fontSize = 13.sp,
-                                            fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium
-                                        )
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = if (isChosen) PrimaryContainer else SecondaryContainer
-                                    )
+                                    selected = idx == selectedProposal,
+                                    onClick = { selectedProposal = idx; ganttState = domain.buildResultState(idx, rulMin, rulMax, domain.calculateInitialSchedule(jobs, tbms, schedulingStart)) },
+                                    label = { Text("${prop.arhId}${if (isChosen) " ★" else ""}", fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium) }
                                 )
                             }
                         }
                     }
-
-                    GanttChart(
-                        state = ganttState,
-                        anomalyTimeInput = anomalyTime,
-                        onPreviousStep = {},
-                        onNextStep = {},
-                        isAutoRunning = isAutoRunning,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    GanttChart(ganttState, anomalyTime = anomalyTime, {}, {}, isAutoRunning, Modifier.fillMaxSize())
                 }
 
-                // Splitter Right
-                if (rightExpanded) {
-                    Box(modifier = Modifier
-                        .fillMaxHeight()
-                        .width(4.dp)
-                        .background(OutlineVariant.copy(0.5f))
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures { change, dragAmount ->
-                                change.consume()
-                                val dragDp = with(density) { dragAmount.toDp() }
-                                rightBaseWidth = (rightBaseWidth - dragDp).coerceIn(250.dp, 600.dp)
-                            }
-                        }
-                    )
-                }
+                if (rightExpanded) Box(modifier = Modifier.fillMaxHeight().width(4.dp).background(OutlineVariant.copy(0.5f)).pointerInput(Unit) {
+                    detectHorizontalDragGestures { change, dragAmount -> change.consume(); rightBaseWidth = (rightBaseWidth - with(density) { dragAmount.toDp() }).coerceIn(250.dp, 600.dp) }
+                })
 
-                // ── Right: Metrics + Logs ──
-                Column(
-                    modifier = Modifier.width(rightCurrentWidth).fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = if (rightExpanded) Arrangement.Start else Arrangement.Center
-                    ) {
+                // RIGHT PANEL (Logs)
+                Column(modifier = Modifier.width(rightCurrentWidth).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (rightExpanded) Arrangement.Start else Arrangement.Center) {
                         IconButton(onClick = { rightExpanded = !rightExpanded }, modifier = Modifier.size(36.dp)) {
-                            Icon(if (rightExpanded) Icons.Default.KeyboardDoubleArrowRight else Icons.Default.KeyboardDoubleArrowLeft, "Toggle Right Panel")
+                            Icon(if (rightExpanded) Icons.Default.KeyboardDoubleArrowRight else Icons.Default.KeyboardDoubleArrowLeft, "")
                         }
                     }
                     if (rightExpanded) {
-                        MetricsDashboard(
-                            f1 = ganttState.f1,
-                            f2 = ganttState.f2,
-                            globalF = ganttState.f,
-                            chosenArh = ganttState.chosenArh,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        CommunicationLog(
-                            logs = ganttState.logs,
-                            modifier = Modifier.weight(1f).fillMaxWidth()
-                        )
+                        MetricsDashboard(ganttState.f1, ganttState.f2, ganttState.f, ganttState.chosenArh, Modifier.fillMaxWidth())
+                        CommunicationLog(ganttState.logs, Modifier.weight(1f).fillMaxWidth())
                     }
                 }
             }

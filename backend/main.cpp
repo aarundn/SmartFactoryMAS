@@ -1,18 +1,12 @@
 /**
  * @file main.cpp
- * @brief Entry point — Chapter 4 data (Tables 4.1, 4.3, 4.4).
- *
- * Communication with Kotlin UI:
- *   stdout: negotiation logs (human-readable)
- *   stderr: JSON_RESULT line (machine-readable, parsed by CliInterop)
- *
- * Reads optional JSON from stdin for dynamic ARH configuration.
- * If no stdin, uses hardcoded Chapter 4 data.
+ * @brief Entry point with dynamic RUL support.
  */
 #include <iostream>
 #include <vector>
 #include <string>
 #include <sstream>
+#include <algorithm>
 #include "FuzzyNumber.h"
 #include "DataStructures.h"
 #include "AMC.h"
@@ -21,72 +15,38 @@
 #include "AMS.h"
 #include "JsonLogger.h"
 
-// Tries to read JSON config from stdin; returns false if empty
 bool tryReadConfig(
-    double& alertTime, double& schedulingStart, double& w1, double& w2, std::string& strategy,
-    std::vector<ProductionJob>& jobs,
-    std::vector<TBMBlock>& tbmBlocks,
-    std::vector<ARH>& arhList);
+        double& alertTime, double& schedulingStart, double& w1, double& w2,
+        double& rulMin, double& rulProb, double& rulMax, std::string& strategy,
+        std::vector<ProductionJob>& jobs, std::vector<TBMBlock>& tbmBlocks, std::vector<ARH>& arhList);
 
 int main() {
-    // ── Default: Chapter 4 data ─────────────────────────────────────────
-
     double alertTime = 8.0;
-    double schedulingStart = 24.0;  // After P4 finishes
+    double schedulingStart = 24.0;
     double w1 = 0.75, w2 = 0.25;
-    std::string strategy = "SOM"; // Default strategy
+    double rulMin = 100.0, rulProb = 120.0, rulMax = 140.0;
+    std::string strategy = "SOM";
 
-    // Production jobs remaining after P4 (Table 4.1)
     std::vector<ProductionJob> jobs = {
-        {"P3", 46.0, 40.0},   // duration=46, due=40
-        {"P2",  6.0, 93.0},   // duration=6,  due=93
-        {"P1", 21.0, 110.0}   // duration=21, due=110
+            {"P3", 46.0, 40.0}, {"P2",  6.0, 93.0}, {"P1", 21.0, 110.0}
     };
-
-    // Fixed TBM blocks (cannot be moved)
     std::vector<TBMBlock> tbmBlocks = {
-        {"M1", 70.0, 90.0},
-        {"M2", 96.0, 103.0}
+            {"M1", 70.0, 90.0}, {"M2", 96.0, 103.0}
     };
-
-    // ARH agents (Tables 4.3 and 4.4)
     std::vector<ARH> arhList;
-
-    ARH arh1;
-    arh1.id = "ARH_1";
-    arh1.availabilities = {{24.0, 50.0}};
-    arh1.repairDuration = FuzzyNumber(4.0, 7.0, 9.0);
-    arh1.competencies = {"Mechanical", "Electrical"};
+    ARH arh1; arh1.id = "ARH_1"; arh1.availabilities = {{0.0, 50.0}};
+    arh1.repairDuration = FuzzyNumber(4.0, 7.0, 9.0); arh1.competencies = {"Mechanical"};
     arhList.push_back(arh1);
 
-    ARH arh2;
-    arh2.id = "ARH_2";
-    arh2.availabilities = {{103.0, 140.0}};
-    arh2.repairDuration = FuzzyNumber(3.0, 6.0, 9.0);
-    arh2.competencies = {"Mechanical"};
-    arhList.push_back(arh2);
+    // Try to read dynamic config from stdin
+    tryReadConfig(alertTime, schedulingStart, w1, w2, rulMin, rulProb, rulMax, strategy, jobs, tbmBlocks, arhList);
 
-    // ── Try to read dynamic config from stdin ────────────────────────────
-    // (Override defaults if Kotlin UI sends JSON input)
-    tryReadConfig(alertTime, schedulingStart, w1, w2, strategy, jobs, tbmBlocks, arhList);
-
-    // ── Create agents and run protocol ───────────────────────────────────
-    AMC amc;
+    AMC amc(rulMin, rulProb, rulMax);
     ASRH asrh(arhList);
     AMS ams(&amc, &asrh, alertTime, w1, w2);
 
     ams.handleAnomaly(schedulingStart, jobs, tbmBlocks, strategy);
-
     return 0;
-}
-
-// ── Minimal JSON parser for dynamic input ────────────────────────────────────
-// Reads a simple JSON format from stdin. No external dependencies.
-
-static std::string trim(const std::string& s) {
-    size_t a = s.find_first_not_of(" \t\n\r\"");
-    size_t b = s.find_last_not_of(" \t\n\r\"");
-    return (a == std::string::npos) ? "" : s.substr(a, b-a+1);
 }
 
 static double getNum(const std::string& json, const std::string& key) {
@@ -127,36 +87,27 @@ static std::vector<std::string> splitArray(const std::string& json, const std::s
 }
 
 bool tryReadConfig(
-    double& alertTime, double& schedulingStart, double& w1, double& w2, std::string& strategy,
-    std::vector<ProductionJob>& jobs,
-    std::vector<TBMBlock>& tbmBlocks,
-    std::vector<ARH>& arhList)
+        double& alertTime, double& schedulingStart, double& w1, double& w2,
+        double& rulMin, double& rulProb, double& rulMax, std::string& strategy,
+        std::vector<ProductionJob>& jobs, std::vector<TBMBlock>& tbmBlocks, std::vector<ARH>& arhList)
 {
-    // Check if stdin has data (non-blocking check)
-    std::string input;
-    std::ostringstream buf;
+    std::string input; std::ostringstream buf;
+    buf << std::cin.rdbuf(); input = buf.str();
+    input.erase(std::remove_if(input.begin(), input.end(), [](char c){ return c == '\n' || c == '\r'; }), input.end());
 
-    // Read all of stdin
-    buf << std::cin.rdbuf();
-    input = buf.str();
-    input.erase(std::remove_if(input.begin(), input.end(),
-        [](char c){ return c == '\n' || c == '\r'; }), input.end());
+    if (input.empty() || input.find('{') == std::string::npos) return false;
 
-    if (input.empty() || input.find('{') == std::string::npos)
-        return false;
-
-    jsonLog("SYS", "Received dynamic configuration from UI.");
-
-    // Parse top-level fields
     double v;
-    v = getNum(input, "alert_time");     if (v >= 0) alertTime = v;
+    v = getNum(input, "alert_time");       if (v >= 0) alertTime = v;
     v = getNum(input, "scheduling_start"); if (v >= 0) schedulingStart = v;
-    v = getNum(input, "w1");             if (v >= 0) w1 = v;
-    v = getNum(input, "w2");             if (v >= 0) w2 = v;
-    
+    v = getNum(input, "w1");               if (v >= 0) w1 = v;
+    v = getNum(input, "w2");               if (v >= 0) w2 = v;
+    v = getNum(input, "rul_min");          if (v >= 0) rulMin = v;
+    v = getNum(input, "rul_prob");         if (v >= 0) rulProb = v;
+    v = getNum(input, "rul_max");          if (v >= 0) rulMax = v;
+
     std::string s = getStr(input, "strategy"); if (!s.empty()) strategy = s;
 
-    // Parse jobs
     auto jobItems = splitArray(input, "jobs");
     if (!jobItems.empty()) {
         jobs.clear();
@@ -169,7 +120,6 @@ bool tryReadConfig(
         }
     }
 
-    // Parse TBM blocks
     auto tbmItems = splitArray(input, "tbm_blocks");
     if (!tbmItems.empty()) {
         tbmBlocks.clear();
@@ -182,25 +132,17 @@ bool tryReadConfig(
         }
     }
 
-    // Parse ARH agents
     auto arhItems = splitArray(input, "arh_agents");
     if (!arhItems.empty()) {
         arhList.clear();
         for (const auto& ai : arhItems) {
             ARH arh;
             arh.id = getStr(ai, "id");
-            double aStart = getNum(ai, "avail_start");
-            double aEnd = getNum(ai, "avail_end");
-            arh.availabilities = {{aStart, aEnd}};
-            arh.repairDuration = FuzzyNumber(
-                getNum(ai, "dur_min"),
-                getNum(ai, "dur_prob"),
-                getNum(ai, "dur_max")
-            );
-            arh.competencies = {"Mechanical"}; // Default for dynamic inputs
+            arh.availabilities = {{getNum(ai, "avail_start"), getNum(ai, "avail_end")}};
+            arh.repairDuration = FuzzyNumber(getNum(ai, "dur_min"), getNum(ai, "dur_prob"), getNum(ai, "dur_max"));
+            arh.competencies = {"Mechanical"};
             if (!arh.id.empty()) arhList.push_back(arh);
         }
     }
-
     return true;
 }

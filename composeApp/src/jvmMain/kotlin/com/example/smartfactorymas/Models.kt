@@ -94,7 +94,6 @@ data class MASOutput(
 }
 
 // ─── Input model sent to the C++ engine (optional dynamic config) ─────────────
-
 @Serializable
 data class EngineInput(
     val strategy: String = "SOM",
@@ -102,6 +101,9 @@ data class EngineInput(
     @SerialName("scheduling_start") val schedulingStart: Double = 24.0,
     val w1: Double = 0.75,
     val w2: Double = 0.25,
+    @SerialName("rul_min") val rulMin: Double = 100.0,
+    @SerialName("rul_prob") val rulProb: Double = 120.0,
+    @SerialName("rul_max") val rulMax: Double = 140.0,
     val jobs: List<JobInput> = emptyList(),
     @SerialName("tbm_blocks") val tbmBlocks: List<TbmInput> = emptyList(),
     @SerialName("arh_agents") val arhAgents: List<ArhInput> = emptyList()
@@ -123,13 +125,7 @@ data class ArhInput(
     @SerialName("dur_max") val durMax: Double
 )
 
-// ─── UI State ──────────────────────────────────────────────────────────────────
-
 data class ArhUiState(
-    val id: String = "ARH_1",
-    val availStart: Double = 24.0,
-    val availEnd: Double = 50.0,
-    val durMin: Double = 4.0,
-    val durProb: Double = 7.0,
-    val durMax: Double = 9.0
+    val id: String, val availStart: Double, val availEnd: Double,
+    val durMin: Double, val durProb: Double, val durMax: Double
 )
