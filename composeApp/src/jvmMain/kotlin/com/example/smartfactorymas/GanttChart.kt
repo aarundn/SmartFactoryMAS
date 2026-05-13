@@ -243,14 +243,14 @@ fun GanttChart(
                     }
 
                     // Descriptive step labels matching the paper's algorithm
-                    val trackLabels = when {
-                        numTracks >= 5 -> listOf(
-                            "(0) Initial", "(1) Fixed", "(2) Naive",
-                            *(List(numTracks - 4) { i -> "(${i + 3}) Pull" }.toTypedArray()),
-                            "(n) Result"
+                    val trackLabels = when (numTracks) {
+                        4 -> listOf(
+                            "(0) Initial",
+                            "(1) Fixed Obstacles",
+                            "(2) Naive Packing",
+                            "(3) Optimal Result"
                         )
-
-                        numTracks == 1 -> listOf("MS")
+                        1 -> listOf("MS")
                         else -> List(numTracks) { i -> "($i)" }
                     }
 

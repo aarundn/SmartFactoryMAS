@@ -44,6 +44,38 @@ object CliInterop {
 
             try {
                 when {
+
+                    line.contains("\"type\":\"result\"") || line.startsWith("JSON_RESULT:") -> {
+                        val stripped = if (line.startsWith("JSON_RESULT:")) line.removePrefix("JSON_RESULT:") else line
+                        val jsonToparse = if (!stripped.contains("\"type\"")) stripped.replaceFirst("{", "{\"type\":\"result\",") else stripped
+
+                        val event = json.decodeFromString<ResultEvent>(jsonToparse)
+                        resultEvent = event
+
+                        // 🟢 ADD CONSOLE LOGS HERE 🟢
+                        println("\n==================================================")
+                        println("🏆 MAS NEGOTIATION COMPLETE")
+                        println("🏆 WINNING TECHNICIAN: ${event.chosenArh}")
+                        println("==================================================")
+
+                        event.proposals.forEach { prop ->
+                            println("\n👷 TECHNICIAN: ${prop.arhId}")
+                            println("   - Proposed Start Time: ${prop.cbmStart}")
+                            println("   - Repair Duration (Min, Prob, Max): [${prop.cbmDurMin}, ${prop.cbmDurProb}, ${prop.cbmDurMax}]")
+                            println("   - f1 (Production Delay): ${prop.f1Prob}")
+                            println("   - f2 (Maintenance Risk): ${prop.f2}")
+                            println("   - f (Global Score): ${prop.fProb}")
+
+                            println("   - 📅 NEW OPTIMIZED SCHEDULE (Rescheduled List):")
+                            prop.schedule.forEach { block ->
+                                println("       [${block.type}] ${block.id} -> Start: ${block.startProb}, End: ${block.endProb}")
+                            }
+                        }
+                        println("==================================================\n")
+                        // 🟢 END CONSOLE LOGS 🟢
+
+                        onEvent(event)
+                    }
                     line.contains("\"type\":\"log\"") -> {
                         val event = json.decodeFromString<LogEvent>(line)
                         logEvents.add(event)

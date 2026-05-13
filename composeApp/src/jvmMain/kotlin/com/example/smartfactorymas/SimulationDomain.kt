@@ -30,7 +30,6 @@ data class GanttState(
 class SimulationDomain {
     private var cachedResult: CliInterop.EngineResult? = null
 
-    // Generates the reactive initial timeline matching the C++ behavior exactly
     fun calculateInitialSchedule(
         jobs: List<JobInput>, tbms: List<TbmInput>, schedulingStart: Double
     ): List<TaskBlock> {
@@ -79,8 +78,7 @@ class SimulationDomain {
         val schedule = calculateInitialSchedule(jobs, tbms, start)
         return GanttState(
             currentStep = 0, schedule = schedule, tracks = listOf(schedule),
-            rulMin = rulMin, rulMax = rulMax,
-            logs = listOf(LogEvent(agent = "AMS", msg = "Initial schedule generated. Monitoring machine health...", level = "info"))
+            rulMin = rulMin, rulMax = rulMax, logs = emptyList()
         )
     }
 
@@ -88,16 +86,12 @@ class SimulationDomain {
         val schedule = calculateInitialSchedule(jobs, tbms, start)
         return GanttState(
             currentStep = 1, schedule = schedule, tracks = listOf(schedule),
-            rulMin = rulMin, rulMax = rulMax,
-            logs = listOf(
-                LogEvent(agent = "AMC", msg = "ANOMALY DETECTED at t=$anomalyTime!", level = "error"),
-                LogEvent(agent = "AMC", msg = "Diagnostic: CBM_Required. RUL=[$rulMin, $rulMax]", level = "warn"),
-                LogEvent(agent = "AMS", msg = "Forwarding to ASRH for negotiation...", level = "info")
-            )
+            rulMin = rulMin, rulMax = rulMax, logs = emptyList()
         )
     }
 
-    fun buildResultState(proposalIdx: Int = 0, rulMin: Double, rulMax: Double, initialSchedule: List<TaskBlock>): GanttState {
+    // تم إضافة anomalyTime كمعلمة هنا لتطبيق فكرتك الديناميكية
+    fun buildResultState(proposalIdx: Int = 0, rulMin: Double, rulMax: Double, initialSchedule: List<TaskBlock>, anomalyTime: Double): GanttState {
         val result = cachedResult ?: return GanttState()
         val out = result.output
         val proposals = out.proposals
@@ -105,23 +99,50 @@ class SimulationDomain {
 
         val idx = proposalIdx.coerceIn(0, proposals.lastIndex)
         val prop = proposals[idx]
+        val cbmStart = prop.cbmStart
 
-        val finalEngineSchedule = prop.schedule.map { block ->
-            val type = when (block.type) { "PRODUCTION" -> TaskType.PRODUCTION; "TBM" -> TaskType.TBM; "CBM" -> TaskType.CBM; else -> TaskType.PRODUCTION }
-            TaskBlock(block.id, type, block.startProb, block.endProb - block.startProb,
-                if (block.type == "PRODUCTION") block.dueDate else null,
-                block.startMin, block.startMax, block.endMin, block.endMax)
+        fun mapEngineBlock(block: ScheduleBlockDto): TaskBlock {
+            val type = when (block.type) {
+                "PRODUCTION" -> TaskType.PRODUCTION
+                "TBM" -> TaskType.TBM
+                "CBM" -> TaskType.CBM
+                else -> TaskType.PRODUCTION
+            }
+            return TaskBlock(
+                id = block.id, type = type, startTime = block.startProb, duration = block.endProb - block.startProb,
+                deadline = if (block.type == "PRODUCTION") block.dueDate else null,
+                startMin = block.startMin, startMax = block.startMax, endMin = block.endMin, endMax = block.endMax
+            )
         }
 
-        val cbmStart = finalEngineSchedule.find { it.type == TaskType.CBM }?.startTime ?: 0.0
-        val finalFixedBlocks = finalEngineSchedule.filter { it.type == TaskType.CBM || it.type == TaskType.TBM }
+        val optimalEngineBlocks = prop.schedule.map { mapEngineBlock(it) }
 
-        val tracks = mutableListOf<List<TaskBlock>>(initialSchedule, finalFixedBlocks)
-        val optimalJobs = finalEngineSchedule.filter { it.type == TaskType.PRODUCTION }
-        tracks.add(finalFixedBlocks + optimalJobs)
+        // 💡 الفلترة الديناميكية (فكرتك): استخراج الوظائف التي بدأت قبل العطل وتجاهلها إذا كانت قادمة من C++
+        val historyBlocks = initialSchedule.filter { initialBlock ->
+            initialBlock.startTime <= anomalyTime && optimalEngineBlocks.none { it.id == initialBlock.id }
+        }
+
+        val tracks = mutableListOf<List<TaskBlock>>()
+
+        // (0) Track 0: MS (الجدول الأصلي يحتوي على كل شيء تلقائياً)
+        tracks.add(initialSchedule)
+
+        // (1) Track 1: Fixed past activities + TBMs + (History P4)
+        val unaffectedBlocks = optimalEngineBlocks.filter {
+            it.type == TaskType.TBM || (it.type == TaskType.PRODUCTION && it.endTime <= cbmStart)
+        }
+        tracks.add(unaffectedBlocks)
+
+        // (2) Track 2: CBM Insertion + (History P4)
+        val cbmBlock = optimalEngineBlocks.find { it.type == TaskType.CBM }
+        val track2Blocks = if (cbmBlock != null) unaffectedBlocks + cbmBlock else unaffectedBlocks
+        tracks.add(track2Blocks)
+
+        // (3) Track 3: Final Schedule + (History P4)
+        tracks.add( optimalEngineBlocks)
 
         return GanttState(
-            currentStep = tracks.lastIndex, schedule = finalEngineSchedule, tracks = tracks,
+            currentStep = tracks.lastIndex, schedule = historyBlocks + optimalEngineBlocks, tracks = tracks,
             f1 = prop.f1Prob.toFloat(), f2 = prop.f2.toFloat(), f = prop.fProb.toFloat(),
             logs = result.logs, chosenArh = out.chosenArh, masOutput = out, selectedProposalIdx = idx,
             rulMin = rulMin, rulMax = rulMax

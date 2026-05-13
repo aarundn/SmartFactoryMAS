@@ -36,15 +36,13 @@ fun MainScreen() {
     var strategy by remember { mutableStateOf("SOM") }
     var w1 by remember { mutableStateOf(0.75f) }
     var anomalyTime by remember { mutableStateOf(8.0) }
-    var schedulingStart by remember { mutableStateOf(24.0) }
+    var schedulingStart by remember { mutableStateOf(4.0) }
 
-    // RUL State
     var rulMin by remember { mutableStateOf(100.0) }
     var rulProb by remember { mutableStateOf(120.0) }
     var rulMax by remember { mutableStateOf(140.0) }
 
-    // Dynamic Lists
-    var jobs by remember { mutableStateOf(listOf(JobInput("P3", 46.0, 40.0), JobInput("P2", 6.0, 93.0), JobInput("P1", 21.0, 110.0))) }
+    var jobs by remember { mutableStateOf(listOf(JobInput("P4", 20.0, 60.0),JobInput("P3", 46.0, 40.0), JobInput("P2", 6.0, 93.0), JobInput("P1", 21.0, 110.0))) }
     var tbms by remember { mutableStateOf(listOf(TbmInput("M1", 70.0, 90.0), TbmInput("M2", 96.0, 103.0))) }
     var arhs by remember { mutableStateOf(listOf(
         ArhUiState("ARH_1", 24.0, 50.0, 4.0, 7.0, 9.0),
@@ -54,10 +52,8 @@ fun MainScreen() {
     var isAutoRunning by remember { mutableStateOf(false) }
     var selectedProposal by remember { mutableStateOf(0) }
 
-    // Reactive State Regeneration for Gantt
     var ganttState by remember { mutableStateOf(domain.buildInitialState(jobs, tbms, schedulingStart, rulMin, rulMax)) }
 
-    // Triggers redraw of Initial Schedule when lists change
     LaunchedEffect(jobs, tbms, schedulingStart, rulMin, rulMax) {
         if (!isAutoRunning && ganttState.masOutput == null) {
             ganttState = domain.buildInitialState(jobs, tbms, schedulingStart, rulMin, rulMax)
@@ -68,27 +64,61 @@ fun MainScreen() {
         if (isAutoRunning) return
         scope.launch {
             isAutoRunning = true
-            ganttState = domain.buildAnomalyState(jobs, tbms, schedulingStart, anomalyTime, rulMin, rulMax)
-            delay(1000)
-
+            
+            // Step 1: Start UI animation
+            ganttState = domain.buildInitialState(jobs, tbms, schedulingStart, rulMin, rulMax).copy(logs = emptyList())
+            delay(400)
+            ganttState = domain.buildAnomalyState(jobs, tbms, schedulingStart, anomalyTime, rulMin, rulMax).copy(logs = ganttState.logs)
+            
             try {
-                val input = EngineInput(strategy, anomalyTime, schedulingStart, w1.toDouble(), (1.0 - w1).toDouble(), rulMin, rulProb, rulMax, jobs, tbms, arhs.map { ArhInput(it.id, it.availStart, it.availEnd, it.durMin, it.durProb, it.durMax) })
+                // 1. حساب الجدول المبدئي لمعرفة أوقات الوظائف
+                val initSched = domain.calculateInitialSchedule(jobs, tbms, schedulingStart)
+
+                // 2. فلترة الوظائف: احتفظ فقط بالوظائف التي تبدأ *بعد* العطل لإرسالها لمحرك C++
+                val futureJobs = jobs.filter { jobInput ->
+                    val scheduledJob = initSched.find { it.id == jobInput.id }
+                    scheduledJob != null && scheduledJob.startTime > anomalyTime
+                }
+
+                // 3. تحديد وقت بداية الجدولة الجديد (نهاية آخر وظيفة تاريخية مثل P4)
+                val historyJobs = initSched.filter { it.startTime <= anomalyTime && it.type == TaskType.PRODUCTION }
+                val engineStartTime = if (historyJobs.isNotEmpty()) historyJobs.maxOf { it.endTime } else schedulingStart
+
+                // إرسال البيانات المفلترة للـ C++ Engine
+                val input = EngineInput(
+                    strategy, anomalyTime, engineStartTime, w1.toDouble(), (1.0 - w1).toDouble(),
+                    rulMin, rulProb, rulMax,
+                    futureJobs, // <-- إرسال الوظائف المستقبلية فقط (P3, P2, P1)
+                    tbms, arhs.map { ArhInput(it.id, it.availStart, it.availEnd, it.durMin, it.durProb, it.durMax) }
+                )
+
+                // Execute C++ Engine
                 val engineRes = withContext(Dispatchers.IO) {
                     domain.runEngine(input) { event ->
-                        scope.launch { if (event is LogEvent) ganttState = ganttState.copy(logs = ganttState.logs + event) }
+                        if (event is LogEvent) {
+                            // Stream logs in real-time
+                            ganttState = ganttState.copy(logs = ganttState.logs + event)
+                        }
                     }
                 }
-
+                
                 val out = engineRes.output
+                delay(800) // Pause for visual effect
+
                 if (out.proposals.isEmpty()) {
-                    ganttState = ganttState.copy(logs = ganttState.logs + LogEvent(agent = "SYS", msg = "Aborted: No valid ARH.", level = "error"))
+                    ganttState = ganttState.copy(
+                        logs = ganttState.logs + LogEvent(agent = "SYS", msg = "ABORT: Negotiation failed. No ARH can intervene safely.", level = "error")
+                    )
                 } else {
+                    // Engine succeeded! Load the winner.
                     val chosenIdx = out.proposals.indexOfFirst { it.arhId == out.chosenArh }.coerceAtLeast(0)
                     selectedProposal = chosenIdx
-                    ganttState = domain.buildResultState(chosenIdx, rulMin, rulMax, domain.calculateInitialSchedule(jobs, tbms, schedulingStart))
+                    ganttState = domain.buildResultState(chosenIdx, rulMin, rulMax, initSched, anomalyTime).copy(logs = ganttState.logs)
                 }
             } catch (e: Exception) {
-                ganttState = ganttState.copy(logs = ganttState.logs + LogEvent(agent = "SYS", msg = "ERROR: ${e.message}", level = "error"))
+                ganttState = ganttState.copy(
+                    logs = ganttState.logs + LogEvent(agent = "SYS", msg = "ERROR: ${e.message}", level = "error")
+                )
             }
             isAutoRunning = false
         }
@@ -144,7 +174,14 @@ fun MainScreen() {
                                 val isChosen = prop.arhId == out.chosenArh
                                 FilterChip(
                                     selected = idx == selectedProposal,
-                                    onClick = { selectedProposal = idx; ganttState = domain.buildResultState(idx, rulMin, rulMax, domain.calculateInitialSchedule(jobs, tbms, schedulingStart)) },
+                                    onClick = {
+                                        selectedProposal = idx
+                                        // PRESERVE the narrative logs when switching tabs by adding .copy(logs = ganttState.logs)
+                                        val initSched = domain.calculateInitialSchedule(jobs, tbms, schedulingStart)
+                                        ganttState = domain.buildResultState(
+                                            idx, rulMin, rulMax, initSched, anomalyTime
+                                        ).copy(logs = ganttState.logs)
+                                    },
                                     label = { Text("${prop.arhId}${if (isChosen) " ★" else ""}", fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium) }
                                 )
                             }

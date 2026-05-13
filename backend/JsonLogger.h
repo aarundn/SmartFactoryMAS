@@ -1,43 +1,23 @@
 #pragma once
 #include <iostream>
 #include <string>
-#include <algorithm>
 
-/**
- * @file JsonLogger.h
- * @brief Helper for emitting structured JSONL events to stdout.
- */
+inline void jsonEmit(const std::string& jsonString) {
+    std::cout << jsonString << std::endl;
+}
 
-// Escapes special characters in a string for safe JSON embedding
-inline std::string jsonEscape(const std::string& s) {
-    std::string out;
-    for (char c : s) {
-        if (c == '"')  out += "\\\"";
-        else if (c == '\\') out += "\\\\";
-        else if (c == '\n') out += "\\n";
-        else if (c == '\r') out += "\\r";
-        else if (c == '\t') out += "\\t";
-        else out += c;
+inline void jsonLog(const std::string& agent, const std::string& msg, const std::string& level = "info", int step = 0) {
+    std::string safeMsg = msg;
+    // استبدال علامات الاقتباس لتجنب كسر الـ JSON
+    size_t pos = 0;
+    while ((pos = safeMsg.find("\"", pos)) != std::string::npos) {
+        safeMsg.replace(pos, 1, "\\\"");
+        pos += 2;
     }
-    return out;
-}
-
-// Emits a structured log line to stdout
-inline void jsonLog(
-    const std::string& agent,
-    const std::string& msg,
-    const std::string& level = "info",
-    int step = -1)
-{
-    std::cout << "{\"type\":\"log\""
-              << ",\"agent\":\"" << jsonEscape(agent) << "\""
-              << ",\"msg\":\""   << jsonEscape(msg)   << "\""
-              << ",\"level\":\"" << level << "\"";
-    if (step >= 0) std::cout << ",\"step\":" << step;
-    std::cout << "}" << std::endl;
-}
-
-// Emits a raw pre-built JSON object (for proposal and result events)
-inline void jsonEmit(const std::string& jsonObject) {
-    std::cout << jsonObject << std::endl;
+    
+    std::string logLine = "{\"type\":\"log\",\"agent\":\"" + agent + 
+                          "\",\"msg\":\"" + safeMsg + 
+                          "\",\"level\":\"" + level + 
+                          "\",\"step\":" + std::to_string(step) + "}";
+    jsonEmit(logLine);
 }
