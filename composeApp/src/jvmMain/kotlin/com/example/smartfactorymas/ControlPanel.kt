@@ -42,14 +42,74 @@ fun ControlPanel(
         }
 
         // Global Configuration
+        // Replace the strategy section inside SectionBox("Configuration & Strategy")
         SectionBox("Configuration & Strategy") {
+
+            // Strategy selector — clicking auto-adjusts recommended weights
             Row(Modifier.fillMaxWidth()) {
-                Segment("SOM (Maintenance)", strategy == "SOM", { onStrategyChange("SOM") }, Modifier.weight(1f))
-                Segment("SOP (Production)", strategy == "SOP", { onStrategyChange("SOP") }, Modifier.weight(1f))
+                Segment("SOM (Maintenance)", strategy == "SOM", {
+                    onStrategyChange("SOM")
+                    onW1Change(0.75f)   // 👈 التعديل هنا: نضع 0.75 ليتطابق مع نتيجة المذكرة (31.25)
+                }, Modifier.weight(1f))
+
+                Segment("SOP (Production)", strategy == "SOP", {
+                    onStrategyChange("SOP")
+                    onW1Change(0.25f)   // 👈 التعديل هنا: نضع 0.25
+                }, Modifier.weight(1f))
             }
+
+            // Strategy description + effective deadline
+            Spacer(Modifier.height(6.dp))
+            val (strategyDesc, deadlineColor) = if (strategy == "SOM")
+                "CBM must finish before risk zone (t=${rulMin.toInt()})" to Color(0xFF4F46E5)
+            else
+                "CBM allowed inside risk zone, before failure (t=${rulMax.toInt()})" to Color(0xFFEF4444)
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        if (strategy == "SOM") Color(0xFFE0E7FF) else Color(0xFFFFEDD5),
+                        RoundedCornerShape(4.dp)
+                    )
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+                Text(strategyDesc, color = deadlineColor, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+            }
+
             Spacer(Modifier.height(8.dp))
             SmallNumberField("Start Time", schedulingStart) { onSchedulingStartChange(it) }
-            SmallNumberField("Weight w1", w1.toDouble()) { onW1Change(it.toFloat()) }
+
+            // Weight sliders — still manually adjustable after auto-set
+            Spacer(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("w1 (prod)", Modifier.width(65.dp), color = OnSurfaceVariant, fontSize = 10.sp)
+                Slider(
+                    value = w1,
+                    onValueChange = onW1Change,
+                    modifier = Modifier.weight(1f),
+                    colors = SliderDefaults.colors(
+                        thumbColor = Primary, activeTrackColor = Primary,
+                        inactiveTrackColor = SurfaceContainerHigh
+                    )
+                )
+                Text("%.2f".format(w1), color = OnSurface, fontSize = 10.sp,
+                    modifier = Modifier.width(32.dp).padding(start = 4.dp))
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("w2 (maint)", Modifier.width(65.dp), color = OnSurfaceVariant, fontSize = 10.sp)
+                Slider(
+                    value = 1f - w1,
+                    onValueChange = { onW1Change(1f - it) },
+                    modifier = Modifier.weight(1f),
+                    colors = SliderDefaults.colors(
+                        thumbColor = Primary, activeTrackColor = Primary,
+                        inactiveTrackColor = SurfaceContainerHigh
+                    )
+                )
+                Text("%.2f".format(1f - w1), color = OnSurface, fontSize = 10.sp,
+                    modifier = Modifier.width(32.dp).padding(start = 4.dp))
+            }
         }
 
         // Anomaly Details

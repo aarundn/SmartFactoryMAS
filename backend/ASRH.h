@@ -51,7 +51,7 @@ public:
         //   SOM → must finish before risk zone starts (RUL.min)
         //   SOP → must finish before machine fails    (RUL.max)
         double deadlineLimit = (strategy == "SOM")
-                ? diag.estimatedRUL.min
+                ? diag.estimatedRUL.min + (diag.estimatedRUL.prob - diag.estimatedRUL.min)
                 : diag.estimatedRUL.max;
 
         jsonLog("ASRH", "Triggered: CBM required. Skill: " + skill + ".", "info", 1);

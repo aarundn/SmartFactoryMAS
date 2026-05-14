@@ -64,60 +64,74 @@ fun MainScreen() {
         if (isAutoRunning) return
         scope.launch {
             isAutoRunning = true
-            
-            // Step 1: Start UI animation
-            ganttState = domain.buildInitialState(jobs, tbms, schedulingStart, rulMin, rulMax).copy(logs = emptyList())
+            ganttState = domain.buildInitialState(jobs, tbms, schedulingStart, rulMin, rulMax)
+                .copy(logs = emptyList())
             delay(400)
-            ganttState = domain.buildAnomalyState(jobs, tbms, schedulingStart, anomalyTime, rulMin, rulMax).copy(logs = ganttState.logs)
-            
+            ganttState = domain.buildAnomalyState(jobs, tbms, schedulingStart, anomalyTime, rulMin, rulMax)
+                .copy(logs = ganttState.logs)
+
             try {
-                // 1. حساب الجدول المبدئي لمعرفة أوقات الوظائف
                 val initSched = domain.calculateInitialSchedule(jobs, tbms, schedulingStart)
 
-                // 2. فلترة الوظائف: احتفظ فقط بالوظائف التي تبدأ *بعد* العطل لإرسالها لمحرك C++
                 val futureJobs = jobs.filter { jobInput ->
                     val scheduledJob = initSched.find { it.id == jobInput.id }
                     scheduledJob != null && scheduledJob.startTime > anomalyTime
                 }
 
-                // 3. تحديد وقت بداية الجدولة الجديد (نهاية آخر وظيفة تاريخية مثل P4)
-                val historyJobs = initSched.filter { it.startTime <= anomalyTime && it.type == TaskType.PRODUCTION }
-                val engineStartTime = if (historyJobs.isNotEmpty()) historyJobs.maxOf { it.endTime } else schedulingStart
+                val historyJobs = initSched.filter {
+                    it.startTime <= anomalyTime && it.type == TaskType.PRODUCTION
+                }
+                val engineStartTime = if (historyJobs.isNotEmpty())
+                    historyJobs.maxOf { it.endTime } else schedulingStart
 
-                // إرسال البيانات المفلترة للـ C++ Engine
+                // Weights are driven by strategy:
+                // SOM → prioritize maintenance (w2 dominant)
+                // SOP → prioritize production  (w1 dominant)
+                val effectiveW1 = w1.toDouble()
+                val effectiveW2 = 1.0 - effectiveW1
+
                 val input = EngineInput(
-                    strategy, anomalyTime, engineStartTime, w1.toDouble(), (1.0 - w1).toDouble(),
+                    strategy, anomalyTime, engineStartTime,
+                    effectiveW1, effectiveW2,
                     rulMin, rulProb, rulMax,
-                    futureJobs, // <-- إرسال الوظائف المستقبلية فقط (P3, P2, P1)
-                    tbms, arhs.map { ArhInput(it.id, it.availStart, it.availEnd, it.durMin, it.durProb, it.durMax) }
+                    futureJobs, tbms,
+                    arhs.map { ArhInput(it.id, it.availStart, it.availEnd, it.durMin, it.durProb, it.durMax) }
                 )
 
-                // Execute C++ Engine
                 val engineRes = withContext(Dispatchers.IO) {
                     domain.runEngine(input) { event ->
-                        if (event is LogEvent) {
-                            // Stream logs in real-time
+                        if (event is LogEvent)
                             ganttState = ganttState.copy(logs = ganttState.logs + event)
-                        }
                     }
                 }
-                
+
                 val out = engineRes.output
-                delay(800) // Pause for visual effect
+                delay(800)
 
                 if (out.proposals.isEmpty()) {
+                    val reason = if (strategy == "SOM")
+                        "No ARH can finish before RUL.min (t=${rulMin.toInt()}). Try SOP strategy."
+                    else
+                        "No ARH can finish before RUL.max (t=${rulMax.toInt()}). Machine failure unavoidable."
+
                     ganttState = ganttState.copy(
-                        logs = ganttState.logs + LogEvent(agent = "SYS", msg = "ABORT: Negotiation failed. No ARH can intervene safely.", level = "error")
+                        logs = ganttState.logs + LogEvent(
+                            agent = "SYS", msg = "ABORT: $reason", level = "error"
+                        )
                     )
                 } else {
-                    // Engine succeeded! Load the winner.
-                    val chosenIdx = out.proposals.indexOfFirst { it.arhId == out.chosenArh }.coerceAtLeast(0)
+                    val chosenIdx = out.proposals
+                        .indexOfFirst { it.arhId == out.chosenArh }
+                        .coerceAtLeast(0)
                     selectedProposal = chosenIdx
-                    ganttState = domain.buildResultState(chosenIdx, rulMin, rulMax, initSched, anomalyTime).copy(logs = ganttState.logs)
+                    ganttState = domain.buildResultState(chosenIdx, rulMin, rulMax, initSched, anomalyTime)
+                        .copy(logs = ganttState.logs)
                 }
             } catch (e: Exception) {
                 ganttState = ganttState.copy(
-                    logs = ganttState.logs + LogEvent(agent = "SYS", msg = "ERROR: ${e.message}", level = "error")
+                    logs = ganttState.logs + LogEvent(
+                        agent = "SYS", msg = "ERROR: ${e.message}", level = "error"
+                    )
                 )
             }
             isAutoRunning = false
