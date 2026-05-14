@@ -1,7 +1,9 @@
 package com.example.smartfactorymas
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -17,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,13 +51,108 @@ fun MainScreen() {
     )) }
 
     var isAutoRunning by remember { mutableStateOf(false) }
-    var selectedProposal by remember { mutableStateOf(0) }
+    var selectedProposal by remember { mutableIntStateOf(0) }
 
     var ganttState by remember { mutableStateOf(domain.buildInitialState(jobs, tbms, schedulingStart, rulMin, rulMax)) }
 
+    // 🌟 الدالة السحرية للتحكم بالخطوات 🌟
+    fun applyStepState(step: Int, proposalIdx: Int = selectedProposal) {
+        val initSched = domain.calculateInitialSchedule(jobs, tbms, schedulingStart)
+        val baseState = ganttState.copy(currentStep = step)
+
+        // 🌟 استخراج نتائج الـ f1, f2, f لكي تظهر في الشاشة بدلاً من الأصفار 🌟
+        val metricsState = if (baseState.masOutput != null && baseState.masOutput.proposals.isNotEmpty()) {
+            domain.buildResultState(proposalIdx, rulMin, rulMax, initSched, anomalyTime)
+        } else {
+            baseState
+        }
+
+        fun mapToTaskBlocks(dtos: List<ScheduleBlockDto>?): List<TaskBlock>? {
+            if (dtos == null) return null
+            return dtos.map { dto ->
+                TaskBlock(
+                    id = dto.id,
+                    type = when (dto.type) {
+                        "CBM" -> TaskType.CBM
+                        "TBM" -> TaskType.TBM
+                        else -> TaskType.PRODUCTION
+                    },
+                    startTime = dto.startProb,
+                    duration = dto.endProb - dto.startProb,
+                    startMin = dto.startMin,
+                    startMax = dto.startMax,
+                    endMin = dto.endMin,
+                    endMax = dto.endMax,
+                    deadline = if (dto.dueDate > 0.0) dto.dueDate else null
+                )
+            }
+        }
+
+        ganttState = when (step) {
+            0 -> domain.buildInitialState(jobs, tbms, schedulingStart, rulMin, rulMax)
+                .copy(currentStep = 0, masOutput = baseState.masOutput, logs = baseState.logs)
+            1 -> domain.buildAnomalyState(jobs, tbms, schedulingStart, anomalyTime, rulMin, rulMax)
+                .copy(currentStep = 1, masOutput = baseState.masOutput, logs = baseState.logs)
+            2 -> { // 🌟 STEP 2: Fixed Obstacles 🌟
+                val prop = baseState.masOutput?.proposals?.getOrNull(proposalIdx)
+                val fixedBlocks = initSched.filter { it.type == TaskType.TBM }.toMutableList()
+                val cbmDto = prop?.tracks?.getOrNull(0)?.find { it.type == "CBM" || it.id == "CBM" }
+                if (cbmDto != null) {
+                    fixedBlocks.add(
+                        TaskBlock(
+                            id = cbmDto.id, type = TaskType.CBM,
+                            startTime = cbmDto.startProb, duration = cbmDto.endProb - cbmDto.startProb,
+                            startMin = cbmDto.startMin, startMax = cbmDto.startMax,
+                            endMin = cbmDto.endMin, endMax = cbmDto.endMax, deadline = null
+                        )
+                    )
+                }
+                baseState.copy(
+                    schedule = fixedBlocks, tracks = listOf(fixedBlocks),
+                    // تمرير القيم هنا
+                    f1 = metricsState.f1, f2 = metricsState.f2, f = metricsState.f, chosenArh = metricsState.chosenArh
+                )
+            }
+            3 -> { // 🌟 STEP 3: Naive Right-Shift 🌟
+                val prop = baseState.masOutput?.proposals?.getOrNull(proposalIdx)
+                val naiveTrack = mapToTaskBlocks(prop?.tracks?.getOrNull(0)) ?: initSched
+                baseState.copy(
+                    schedule = naiveTrack, tracks = listOf(naiveTrack),
+                    // تمرير القيم هنا
+                    f1 = metricsState.f1, f2 = metricsState.f2, f = metricsState.f, chosenArh = metricsState.chosenArh
+                )
+            }
+            4 -> { // 🌟 STEP 4: Final Optimal Result (Show ALL Steps) 🌟
+                val prop = baseState.masOutput?.proposals?.getOrNull(proposalIdx)
+
+                val fixedBlocks = initSched.filter { it.type == TaskType.TBM }.toMutableList()
+                val cbmDto = prop?.tracks?.getOrNull(0)?.find { it.type == "CBM" || it.id == "CBM" }
+                if (cbmDto != null) {
+                    fixedBlocks.add(
+                        TaskBlock(
+                            id = cbmDto.id, type = TaskType.CBM,
+                            startTime = cbmDto.startProb, duration = cbmDto.endProb - cbmDto.startProb,
+                            startMin = cbmDto.startMin, startMax = cbmDto.startMax,
+                            endMin = cbmDto.endMin, endMax = cbmDto.endMax, deadline = null
+                        )
+                    )
+                }
+                val naiveTrack = mapToTaskBlocks(prop?.tracks?.getOrNull(0)) ?: initSched
+                val optimalTrack = mapToTaskBlocks(prop?.tracks?.getOrNull(1) ?: prop?.schedule) ?: initSched
+
+                baseState.copy(
+                    schedule = optimalTrack, tracks = listOf(initSched, fixedBlocks, naiveTrack, optimalTrack),
+                    // تمرير القيم هنا لتعود الحياة للأرقام!
+                    f1 = metricsState.f1, f2 = metricsState.f2, f = metricsState.f, chosenArh = metricsState.chosenArh
+                )
+            }
+            else -> baseState
+        }
+    }
+
     LaunchedEffect(jobs, tbms, schedulingStart, rulMin, rulMax) {
         if (!isAutoRunning && ganttState.masOutput == null) {
-            ganttState = domain.buildInitialState(jobs, tbms, schedulingStart, rulMin, rulMax)
+            applyStepState(0)
         }
     }
 
@@ -61,9 +160,14 @@ fun MainScreen() {
         if (isAutoRunning) return
         scope.launch {
             isAutoRunning = true
-            ganttState = domain.buildInitialState(jobs, tbms, schedulingStart, rulMin, rulMax).copy(logs = emptyList())
-            delay(400)
-            ganttState = domain.buildAnomalyState(jobs, tbms, schedulingStart, anomalyTime, rulMin, rulMax).copy(logs = ganttState.logs)
+            ganttState = ganttState.copy(masOutput = null, logs = emptyList())
+
+            // Step 0: Initial
+            applyStepState(0)
+            delay(500)
+
+            // Step 1: Anomaly
+            applyStepState(1)
 
             try {
                 val initSched = domain.calculateInitialSchedule(jobs, tbms, schedulingStart)
@@ -75,11 +179,8 @@ fun MainScreen() {
                 val historyJobs = initSched.filter { it.startTime <= anomalyTime && it.type == TaskType.PRODUCTION }
                 val engineStartTime = if (historyJobs.isNotEmpty()) historyJobs.maxOf { it.endTime } else schedulingStart
 
-                val effectiveW1 = w1.toDouble()
-                val effectiveW2 = 1.0 - effectiveW1
-
                 val input = EngineInput(
-                    strategy, anomalyTime, engineStartTime, effectiveW1, effectiveW2,
+                    strategy, anomalyTime, engineStartTime, w1.toDouble(), 1.0 - w1.toDouble(),
                     rulMin, rulProb, rulMax, futureJobs, tbms,
                     arhs.map { ArhInput(it.id, it.availStart, it.availEnd, it.durMin, it.durProb, it.durMax) }
                 )
@@ -94,14 +195,19 @@ fun MainScreen() {
                 delay(800)
 
                 if (out.proposals.isEmpty()) {
-                    val reason = if (strategy == "SOM") "No ARH can finish before RUL.min (t=${rulMin.toInt()}). Try SOP strategy."
-                    else "No ARH can finish before RUL.max (t=${rulMax.toInt()}). Machine failure unavoidable."
-
-                    ganttState = ganttState.copy(logs = ganttState.logs + LogEvent(agent = "SYS", msg = "ABORT: $reason", level = "error"))
+                    ganttState = ganttState.copy(logs = ganttState.logs + LogEvent(agent = "SYS", msg = "ABORT: No valid proposals.", level = "error"))
                 } else {
                     val chosenIdx = out.proposals.indexOfFirst { it.arhId == out.chosenArh }.coerceAtLeast(0)
                     selectedProposal = chosenIdx
-                    ganttState = domain.buildResultState(chosenIdx, rulMin, rulMax, initSched, anomalyTime).copy(logs = ganttState.logs)
+                    ganttState = ganttState.copy(masOutput = out) // حفظ النتائج أولاً
+
+                    // 🌟 Animated Steps for Presentation 🌟
+                    delay(800)
+                    applyStepState(2, chosenIdx) // Show Naive
+                    delay(1200)
+                    applyStepState(3, chosenIdx) // Show Comparison
+                    delay(1500)
+                    applyStepState(4, chosenIdx) // Show Final
                 }
             } catch (e: Exception) {
                 ganttState = ganttState.copy(logs = ganttState.logs + LogEvent(agent = "SYS", msg = "ERROR: ${e.message}", level = "error"))
@@ -110,29 +216,50 @@ fun MainScreen() {
         }
     }
 
+    var leftExpanded by remember { mutableStateOf(true) }
+    var rightExpanded by remember { mutableStateOf(true) }
+    var leftBaseWidth by remember { mutableStateOf(300.dp) }
+    var rightBaseWidth by remember { mutableStateOf(400.dp) }
+
+    val leftCurrentWidth by animateDpAsState(if (leftExpanded) leftBaseWidth else 48.dp)
+    val rightCurrentWidth by animateDpAsState(if (rightExpanded) rightBaseWidth else 48.dp)
+    val density = LocalDensity.current
+
     Row(modifier = Modifier.fillMaxSize().background(SurfaceBright)) {
         Sidebar()
 
         Column(modifier = Modifier.fillMaxSize().weight(1f)) {
             TopHeader()
 
-            // 3-Column Grid Layout matching Tailwind grid-cols-12
             Row(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
 
-                // Panel A: Command Center (col-span-3)
-                Column(modifier = Modifier.weight(3f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                    ControlPanel(
-                        strategy, { strategy = it }, w1, { w1 = it },
-                        anomalyTime, { anomalyTime = it }, schedulingStart, { schedulingStart = it },
-                        rulMin, { rulMin = it }, rulProb, { rulProb = it }, rulMax, { rulMax = it },
-                        jobs, { jobs = it; ganttState = ganttState.copy(masOutput = null) },
-                        tbms, { tbms = it; ganttState = ganttState.copy(masOutput = null) },
-                        arhs, { arhs = it }, ::runAutoSimulation
-                    )
+                // LEFT PANEL
+                Column(modifier = Modifier.width(leftCurrentWidth).fillMaxHeight()) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = if (leftExpanded) Arrangement.End else Arrangement.Center) {
+                        IconButton(onClick = { leftExpanded = !leftExpanded }, modifier = Modifier.size(36.dp)) {
+                            Icon(if (leftExpanded) Icons.Default.KeyboardDoubleArrowLeft else Icons.Default.KeyboardDoubleArrowRight, "")
+                        }
+                    }
+                    if (leftExpanded) {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            ControlPanel(
+                                strategy, { strategy = it }, w1, { w1 = it },
+                                anomalyTime, { anomalyTime = it }, schedulingStart, { schedulingStart = it },
+                                rulMin, { rulMin = it }, rulProb, { rulProb = it }, rulMax, { rulMax = it },
+                                jobs, { jobs = it; ganttState = ganttState.copy(masOutput = null) },
+                                tbms, { tbms = it; ganttState = ganttState.copy(masOutput = null) },
+                                arhs, { arhs = it }, ::runAutoSimulation
+                            )
+                        }
+                    }
                 }
 
-                // Panel B: Gantt Chart (col-span-6)
-                Column(modifier = Modifier.weight(6f).fillMaxHeight()) {
+                if (leftExpanded) Box(modifier = Modifier.fillMaxHeight().width(4.dp).background(OutlineVariant.copy(0.5f)).pointerInput(Unit) {
+                    detectHorizontalDragGestures { change, dragAmount -> change.consume(); leftBaseWidth = (leftBaseWidth + with(density) { dragAmount.toDp() }).coerceIn(250.dp, 600.dp) }
+                })
+
+                // CENTER PANEL (Gantt)
+                Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     ganttState.masOutput?.let { out ->
                         Row(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             out.proposals.forEachIndexed { idx, prop ->
@@ -141,8 +268,7 @@ fun MainScreen() {
                                     selected = idx == selectedProposal,
                                     onClick = {
                                         selectedProposal = idx
-                                        val initSched = domain.calculateInitialSchedule(jobs, tbms, schedulingStart)
-                                        ganttState = domain.buildResultState(idx, rulMin, rulMax, initSched, anomalyTime).copy(logs = ganttState.logs)
+                                        applyStepState(ganttState.currentStep, idx) // 👈 يحافظ على الخطوة الحالية عند تبديل العمال
                                     },
                                     label = { Text("${prop.arhId}${if (isChosen) " ★" else ""}", fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium) },
                                     colors = FilterChipDefaults.filterChipColors(
@@ -153,13 +279,32 @@ fun MainScreen() {
                             }
                         }
                     }
-                    GanttChart(ganttState, anomalyTime = anomalyTime, {}, {}, isAutoRunning, Modifier.fillMaxSize())
+
+                    GanttChart(
+                        state = ganttState,
+                        anomalyTime = anomalyTime,
+                        onPreviousStep = { if (ganttState.currentStep > 0) applyStepState(ganttState.currentStep - 1) },
+                        onNextStep = { if (ganttState.currentStep < 4) applyStepState(ganttState.currentStep + 1) },
+                        isAutoRunning = isAutoRunning,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
 
-                // Panel C: Metrics & Logs (col-span-3)
-                Column(modifier = Modifier.weight(3f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                    MetricsDashboard(ganttState.f1, ganttState.f2, ganttState.f, ganttState.chosenArh, Modifier.fillMaxWidth())
-                    CommunicationLog(ganttState.logs, Modifier.weight(1f).fillMaxWidth())
+                if (rightExpanded) Box(modifier = Modifier.fillMaxHeight().width(4.dp).background(OutlineVariant.copy(0.5f)).pointerInput(Unit) {
+                    detectHorizontalDragGestures { change, dragAmount -> change.consume(); rightBaseWidth = (rightBaseWidth - with(density) { dragAmount.toDp() }).coerceIn(250.dp, 600.dp) }
+                })
+
+                // RIGHT PANEL
+                Column(modifier = Modifier.width(rightCurrentWidth).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (rightExpanded) Arrangement.Start else Arrangement.Center) {
+                        IconButton(onClick = { rightExpanded = !rightExpanded }, modifier = Modifier.size(36.dp)) {
+                            Icon(if (rightExpanded) Icons.Default.KeyboardDoubleArrowRight else Icons.Default.KeyboardDoubleArrowLeft, "")
+                        }
+                    }
+                    if (rightExpanded) {
+                        MetricsDashboard(ganttState.f1, ganttState.f2, ganttState.f, ganttState.chosenArh, Modifier.fillMaxWidth())
+                        CommunicationLog(ganttState.logs, Modifier.weight(1f).fillMaxWidth())
+                    }
                 }
             }
         }

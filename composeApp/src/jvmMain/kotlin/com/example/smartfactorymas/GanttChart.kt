@@ -52,11 +52,11 @@ fun GanttChart(
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
-                val stepText = when (state.currentStep) {
+                val stepText = when(state.currentStep) {
                     0 -> "STEP 0: INITIAL SCHEDULE"
                     1 -> "STEP 1: ANOMALY DETECTED"
-                    2 -> "STEP 2: NAIVE PACKING"
-                    3 -> "STEP 3: OPTIMIZING..."
+                    2 -> "STEP 2: FIXED OBSTACLES"
+                    3 -> "STEP 3: NAIVE PACKING"
                     else -> "STEP 4: FINAL SHUFFLE"
                 }
                 Text(
@@ -326,21 +326,24 @@ fun GanttChart(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedButton(onClick = onPreviousStep, shape = RoundedCornerShape(6.dp)) {
-                    Text("< Previous Step", color = OnSurfaceVariant)
+                val canGoPrev = state.currentStep > 0 && !isAutoRunning
+                OutlinedButton(
+                    onClick = onPreviousStep,
+                    shape = RoundedCornerShape(6.dp),
+                    enabled = canGoPrev
+                ) {
+                    Text("< Previous Step", color = if (canGoPrev) OnSurfaceVariant else OutlineVariant)
                 }
-                Text(
-                    "Iteration: ${if (state.currentStep == 4) 43 else state.currentStep}",
-                    color = OnSurfaceVariant,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
+
+                Text("Iteration: ${if (state.currentStep == 4) 3 else state.currentStep}", color = OnSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+
+                val canGoNext = state.currentStep < 4 && (state.currentStep == 0 || state.masOutput != null) && !isAutoRunning
                 OutlinedButton(
                     onClick = onNextStep,
                     shape = RoundedCornerShape(6.dp),
-                    enabled = state.currentStep < 4
+                    enabled = canGoNext
                 ) {
-                    Text("Next Step >", color = OnSurfaceVariant)
+                    Text("Next Step >", color = if (canGoNext) OnSurfaceVariant else OutlineVariant)
                 }
             }
         }
