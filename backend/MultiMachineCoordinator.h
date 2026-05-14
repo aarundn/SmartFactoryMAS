@@ -8,125 +8,117 @@
 
 class MultiMachineCoordinator {
 public:
+    MultiMachineResult negotiate(std::vector<ScheduleBlock> amsSched, AMA& ama, AMV& amv) {
+        MultiMachineResult r;
+        r.amsSchedule = amsSched;
 
-    MultiMachineResult negotiate(
-            const std::vector<ScheduleBlock>& amsNewSchedule,
-            AMA& ama,    // upstream — may modify its schedule
-            AMV& amv)    // downstream — may shift its schedule
-    {
-        MultiMachineResult result;
-        result.amsSchedule = amsNewSchedule;
+        for (size_t i = 0; i < r.amsSchedule.size(); ++i) {
+            auto& b = r.amsSchedule[i];
+            if (b.type != "PRODUCTION") continue;
 
-        jsonLog("MMC", "=== Multi-Machine Negotiation Started ===");
-        jsonLog("MMC", "Checking " + std::to_string(amsNewSchedule.size())
-                + " blocks for upstream/downstream conflicts...");
+            // ── 1. التفاوض القبلي (UPSTREAM - AMA) ─────────────────────
+            double ready = ama.getReadyTime(b.id);
+            if (ready > 0 && b.start.prob < ready) {
+                r.upstreamConflict = true;
+                bool ok = ama.handleMMessage(b.id, b.start.prob);
+                r.messages.push_back({"M_MESSAGE", "AMS", ama.id, b.id, ready, b.start.prob, ok, ""});
 
-        for (const auto& block : amsNewSchedule) {
-            if (block.type != "PRODUCTION") continue;
+                if (!ok) {
+                    double delay = ready - b.start.prob;
 
-            // ── UPSTREAM CONFLICT ────────────────────────────────────────────
-            // AMS wants to start job before AMA has finished it
-            double readyTime = ama.getReadyTime(block.id);
-            if (readyTime > 0 && block.start.prob < readyTime) {
-                result.upstreamConflict = true;
-                jsonLog("MMC",
-                        "UPSTREAM CONFLICT: " + block.id
-                                + " — AMS start t=" + std::to_string((int)block.start.prob)
-                                + " < AMA ready t=" + std::to_string((int)readyTime), "warn");
+                    // 🌟 الإصلاح السحري: إضافة التأخير لجميع القيم صراحةً لتجاوز خطأ الجمع في C++ 🌟
+                    b.start.min += delay;
+                    b.start.prob += delay;
+                    b.start.max += delay;
 
-                // Delegate entirely to AMA — it decides and updates itself
-                bool accepted = ama.handleMMessage(block.id, block.start.prob);
+                    b.end.min += delay;
+                    b.end.prob += delay;
+                    b.end.max += delay;
 
-                NegotiationMessage msg;
-                msg.type          = "M_MESSAGE";
-                msg.from          = "AMS";
-                msg.to            = ama.id;
-                msg.jobId         = block.id;
-                msg.originalTime  = readyTime;
-                msg.requestedTime = block.start.prob;
-                msg.accepted      = accepted;
-                msg.reason        = accepted
-                        ? "AMA accelerated delivery"
-                        : "AMA cannot accelerate — AMS must respect t=" + std::to_string((int)readyTime);
-                result.messages.push_back(msg);
+                    // إزاحة المهام اللاحقة (Cascade Shift) لمنع التداخل
+                    for (size_t j = i + 1; j < r.amsSchedule.size(); ++j) {
+                        if (r.amsSchedule[j].start.prob < r.amsSchedule[j-1].end.prob) {
+                            double overlap = r.amsSchedule[j-1].end.prob - r.amsSchedule[j].start.prob;
+                            r.amsSchedule[j].start.min += overlap;
+                            r.amsSchedule[j].start.prob += overlap;
+                            r.amsSchedule[j].start.max += overlap;
+
+                            r.amsSchedule[j].end.min += overlap;
+                            r.amsSchedule[j].end.prob += overlap;
+                            r.amsSchedule[j].end.max += overlap;
+                        }
+                    }
+                }
             }
 
-            // ── DOWNSTREAM CONFLICT ──────────────────────────────────────────
-            // AMS finishes job later than AMV expected
-            double expectedArrival = amv.getExpectedArrival(block.id);
-            if (expectedArrival > 0 && block.end.prob > expectedArrival) {
-                result.downstreamConflict = true;
-                jsonLog("MMC",
-                        "DOWNSTREAM CONFLICT: " + block.id
-                                + " — AMS finish t=" + std::to_string((int)block.end.prob)
-                                + " > AMV expected t=" + std::to_string((int)expectedArrival), "warn");
+            // ── 2. التفاوض البعدي (DOWNSTREAM - AMV) ───────────────────
+            double exp = amv.getExpectedArrival(b.id);
+            if (exp > 0 && b.end.prob > exp) {
+                r.downstreamConflict = true;
+                double delay = b.end.prob - exp;
 
-                // Delegate entirely to AMV — it always adapts
-                double delay = amv.handleIMessage(block.id, block.end.prob);
-
-                NegotiationMessage msg;
-                msg.type          = "I_MESSAGE";
-                msg.from          = "AMS";
-                msg.to            = amv.id;
-                msg.jobId         = block.id;
-                msg.originalTime  = expectedArrival;
-                msg.requestedTime = block.end.prob;
-                msg.accepted      = true;
-                msg.reason        = "AMV shifted " + std::to_string((int)delay) + " units right";
-                result.messages.push_back(msg);
+                amv.handleIMessage(b.id, b.end.prob);
+                r.messages.push_back({"I_MESSAGE", "AMS", amv.id, b.id, exp, b.end.prob, true, ""});
             }
         }
 
-        // Collect final schedules from the agents themselves
-        result.amaSchedule = ama.schedule;
-        result.amvSchedule = amv.schedule;
-
-        if (!result.upstreamConflict && !result.downstreamConflict)
-            jsonLog("MMC", "No conflicts. All three machines are consistent.");
-
-        jsonLog("MMC", "=== Negotiation Complete ===");
-        emitJson(result, ama.id, amv.id);
-        return result;
+        r.amaSchedule = ama.schedule;
+        r.amvSchedule = amv.schedule;
+        emitJson(r, ama.id, amv.id);
+        return r;
     }
 
 private:
-    std::string buildSchedJson(const std::vector<ScheduleBlock>& s) const {
-        std::ostringstream j;
-        j << "[";
-        for (size_t i = 0; i < s.size(); ++i) {
-            const auto& b = s[i];
-            if (i > 0) j << ",";
-            j << "{\"id\":\"" << b.id << "\",\"type\":\"" << b.type << "\""
-              << ",\"start_min\":" << b.start.min << ",\"start_prob\":" << b.start.prob
-              << ",\"start_max\":" << b.start.max << ",\"end_min\":" << b.end.min
-              << ",\"end_prob\":" << b.end.prob << ",\"end_max\":" << b.end.max
-              << ",\"due_date\":" << b.dueDate << "}";
-        }
-        j << "]";
-        return j.str();
-    }
-
-    void emitJson(const MultiMachineResult& r,
-            const std::string& amaId, const std::string& amvId)
-    {
+    void emitJson(const MultiMachineResult& r, const std::string& amaId, const std::string& amvId) {
         std::ostringstream j;
         j << "{\"type\":\"multi_machine_result\""
-          << ",\"upstream_conflict\":" << (r.upstreamConflict ? "true" : "false")
-          << ",\"downstream_conflict\":" << (r.downstreamConflict ? "true" : "false")
-          << ",\"ama_id\":\"" << amaId << "\",\"amv_id\":\"" << amvId << "\""
-          << ",\"ama_schedule\":" << buildSchedJson(r.amaSchedule)
-          << ",\"ams_schedule\":" << buildSchedJson(r.amsSchedule)
-          << ",\"amv_schedule\":" << buildSchedJson(r.amvSchedule)
-          << ",\"messages\":[";
+          << ",\"ama_id\":\"" << amaId << "\""
+          << ",\"amv_id\":\"" << amvId << "\""
+          << ",\"upstream_conflict\":"   << (r.upstreamConflict   ? "true" : "false")
+          << ",\"downstream_conflict\":" << (r.downstreamConflict ? "true" : "false");
+
+        j << ",\"ams_schedule\": [";
+        for (size_t i = 0; i < r.amsSchedule.size(); ++i) {
+            if (i > 0) j << ",";
+            auto& b = r.amsSchedule[i];
+            j << "{\"id\":\"" << b.id << "\",\"type\":\"" << b.type << "\""
+              << ",\"start_min\":" << b.start.min << ",\"start_prob\":" << b.start.prob << ",\"start_max\":" << b.start.max
+              << ",\"end_min\":" << b.end.min << ",\"end_prob\":" << b.end.prob << ",\"end_max\":" << b.end.max << "}";
+        }
+        j << "]";
+
+        j << ",\"ama_schedule\": [";
+        for (size_t i = 0; i < r.amaSchedule.size(); ++i) {
+            if (i > 0) j << ",";
+            auto& b = r.amaSchedule[i];
+            j << "{\"id\":\"" << b.id << "\",\"type\":\"" << b.type << "\""
+              << ",\"start_min\":" << b.start.min << ",\"start_prob\":" << b.start.prob << ",\"start_max\":" << b.start.max
+              << ",\"end_min\":" << b.end.min << ",\"end_prob\":" << b.end.prob << ",\"end_max\":" << b.end.max << "}";
+        }
+        j << "]";
+
+        j << ",\"amv_schedule\": [";
+        for (size_t i = 0; i < r.amvSchedule.size(); ++i) {
+            if (i > 0) j << ",";
+            auto& b = r.amvSchedule[i];
+            j << "{\"id\":\"" << b.id << "\",\"type\":\"" << b.type << "\""
+              << ",\"start_min\":" << b.start.min << ",\"start_prob\":" << b.start.prob << ",\"start_max\":" << b.start.max
+              << ",\"end_min\":" << b.end.min << ",\"end_prob\":" << b.end.prob << ",\"end_max\":" << b.end.max << "}";
+        }
+        j << "]";
+
+        j << ",\"messages\":[";
         for (size_t i = 0; i < r.messages.size(); ++i) {
             const auto& m = r.messages[i];
             if (i > 0) j << ",";
-            j << "{\"type\":\"" << m.type << "\",\"from\":\"" << m.from
-              << "\",\"to\":\"" << m.to << "\",\"job_id\":\"" << m.jobId << "\""
-              << ",\"original_time\":" << m.originalTime
-              << ",\"requested_time\":" << m.requestedTime
-              << ",\"accepted\":" << (m.accepted ? "true" : "false")
-              << ",\"reason\":\"" << m.reason << "\"}";
+            j << "{\"type\":\""           << m.type          << "\""
+              << ",\"from\":\""           << m.from          << "\""
+              << ",\"to\":\""             << m.to            << "\""
+              << ",\"job_id\":\""         << m.jobId         << "\""
+              << ",\"original_time\":"    << m.originalTime
+              << ",\"requested_time\":"   << m.requestedTime
+              << ",\"accepted\":"         << (m.accepted ? "true" : "false")
+              << "}";
         }
         j << "]}";
         std::cout << j.str() << std::endl;

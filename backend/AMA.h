@@ -42,11 +42,16 @@ public:
         double duration = target->end.prob - target->start.prob;
         double newStart = requestedTime - duration;
 
+        // 🌟 التعديل الجديد: منع الآلة من بدء العمل في وقت سلبي
+        if (newStart < 0) {
+            jsonLog(id, "REJECTED: shifting would result in negative start time (" + std::to_string((int)newStart) + ").", "warn");
+            return false;
+        }
+
         for (const auto& other : schedule) {
             if (other.id == jobId) continue;
             if (other.start.prob < requestedTime && other.end.prob > newStart) {
-                jsonLog(id, "REJECTED: shifting " + jobId
-                        + " conflicts with " + other.id + ".", "warn");
+                jsonLog(id, "REJECTED: shifting " + jobId + " conflicts with " + other.id + ".", "warn");
                 return false;
             }
         }
@@ -55,8 +60,7 @@ public:
         target->end   = FuzzyNumber(requestedTime, requestedTime, requestedTime);
         jobCompletionTimes[jobId] = requestedTime;
 
-        jsonLog(id, "ACCEPTED: job " + jobId
-                + " rescheduled to finish at t=" + std::to_string((int)requestedTime) + ".");
+        jsonLog(id, "ACCEPTED: job " + jobId + " rescheduled to finish at t=" + std::to_string((int)requestedTime) + ".");
         return true;
     }
 };

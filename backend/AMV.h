@@ -27,30 +27,17 @@ public:
 
     double handleIMessage(const std::string& jobId, double newArrival) {
         double originalArrival = getExpectedArrival(jobId);
-        if (originalArrival < 0) {
-            jsonLog(id, "I_Message ignored: job " + jobId + " not in schedule.", "warn");
-            return 0.0;
-        }
+        if (originalArrival < 0) return 0.0;
 
         double delay = newArrival - originalArrival;
-        if (delay <= 0) {
-            jsonLog(id, "I_Message for " + jobId + ": no delay. No shift needed.");
-            return 0.0;
-        }
-
-        jsonLog(id, "Received I_Message: job " + jobId
-                + " arrives at t=" + std::to_string((int)newArrival)
-                + " instead of t=" + std::to_string((int)originalArrival)
-                + ". Shifting +" + std::to_string((int)delay) + " units.");
+        if (delay <= 0) return 0.0;
 
         for (auto& block : schedule) {
             if (block.start.prob >= originalArrival) {
-                block.start = block.start + delay;
-                block.end   = block.end   + delay;
+                // 🌟 إضافة التأخير صراحةً لجميع المتغيرات 🌟
+                block.start.min += delay; block.start.prob += delay; block.start.max += delay;
+                block.end.min   += delay; block.end.prob   += delay; block.end.max   += delay;
                 expectedArrivalTimes[block.id] = block.start.prob;
-                jsonLog(id, "  Shifted " + block.id
-                        + " → [t=" + std::to_string((int)block.start.prob)
-                        + ", t=" + std::to_string((int)block.end.prob) + "]");
             }
         }
         return delay;
