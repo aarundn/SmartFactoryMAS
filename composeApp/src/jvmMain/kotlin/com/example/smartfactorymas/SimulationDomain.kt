@@ -115,34 +115,44 @@ class SimulationDomain {
             )
         }
 
+        // 1. استلام الجداول الجاهزة من محرك C++
         val optimalEngineBlocks = prop.schedule.map { mapEngineBlock(it) }
-
-        // 💡 الفلترة الديناميكية (فكرتك): استخراج الوظائف التي بدأت قبل العطل وتجاهلها إذا كانت قادمة من C++
+        val naiveEngineBlocks = prop.tracks.getOrNull(0)?.map { mapEngineBlock(it) } ?: emptyList()
+        print("optimalEngineBlocks: $optimalEngineBlocks\nnaiveEngineBlocks: $naiveEngineBlocks")
+        // 2. الكتل التاريخية (مثل P4 التي انتهت قبل العطل) للرسم فقط
         val historyBlocks = initialSchedule.filter { initialBlock ->
             initialBlock.startTime <= anomalyTime && optimalEngineBlocks.none { it.id == initialBlock.id }
         }
 
         val tracks = mutableListOf<List<TaskBlock>>()
 
-        // (0) Track 0: MS (الجدول الأصلي يحتوي على كل شيء تلقائياً)
+        // الخطوة (0): الجدول الأصلي
         tracks.add(initialSchedule)
 
-        // (1) Track 1: Fixed past activities + TBMs + (History P4)
-        val unaffectedBlocks = optimalEngineBlocks.filter {
-            it.type == TaskType.TBM || (it.type == TaskType.PRODUCTION && it.endTime <= cbmStart)
+        // الخطوة (1): الثوابت فقط (CBM + TBMs)
+
+        val fixedBlocks = optimalEngineBlocks.filter {
+            it.type == TaskType.TBM || it.type == TaskType.CBM || (it.type == TaskType.PRODUCTION && it.endTime <= cbmStart)
         }
-        tracks.add(unaffectedBlocks)
+        tracks.add(fixedBlocks)
 
-        // (2) Track 2: CBM Insertion + (History P4)
-        val cbmBlock = optimalEngineBlocks.find { it.type == TaskType.CBM }
-        val track2Blocks = if (cbmBlock != null) unaffectedBlocks + cbmBlock else unaffectedBlocks
-        tracks.add(track2Blocks)
 
-        // (3) Track 3: Final Schedule + (History P4)
-        tracks.add( optimalEngineBlocks)
+        // الخطوة (2): الإزاحة لليمين (Right-Shift) للوظائف الإنتاجية
+        if (naiveEngineBlocks.isNotEmpty()) {
+            tracks.add( naiveEngineBlocks)
+        } else {
+            tracks.add(fixedBlocks) // Fallback
+        }
+
+        // =========================================================
+        // الخطوة (3): الخطوة الأخيرة (الترتيب المثالي Final Optimal)
+        // =========================================================
+        tracks.add(optimalEngineBlocks)
 
         return GanttState(
-            currentStep = tracks.lastIndex, schedule = historyBlocks + optimalEngineBlocks, tracks = tracks,
+            currentStep = tracks.lastIndex,
+            schedule = historyBlocks + optimalEngineBlocks,
+            tracks = tracks,
             f1 = prop.f1Prob.toFloat(), f2 = prop.f2.toFloat(), f = prop.fProb.toFloat(),
             logs = result.logs, chosenArh = out.chosenArh, masOutput = out, selectedProposalIdx = idx,
             rulMin = rulMin, rulMax = rulMax

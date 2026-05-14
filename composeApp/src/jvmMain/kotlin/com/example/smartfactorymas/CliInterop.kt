@@ -10,6 +10,9 @@ object CliInterop {
     private val json = Json {
         ignoreUnknownKeys = true
         classDiscriminator = "type"
+        isLenient = true
+        coerceInputValues = true
+        encodeDefaults = true
     }
 
     data class EngineResult(
@@ -46,9 +49,17 @@ object CliInterop {
                 when {
 
                     line.contains("\"type\":\"result\"") || line.startsWith("JSON_RESULT:") -> {
-                        val stripped = if (line.startsWith("JSON_RESULT:")) line.removePrefix("JSON_RESULT:") else line
-                        val jsonToparse = if (!stripped.contains("\"type\"")) stripped.replaceFirst("{", "{\"type\":\"result\",") else stripped
-
+                        val stripped =
+                            if (line.startsWith("JSON_RESULT:")) line.removePrefix("JSON_RESULT:") else line
+                        val jsonToparse = if (!stripped.contains("\"type\"")) stripped.replaceFirst(
+                            "{",
+                            "{\"type\":\"result\","
+                        ) else stripped
+// 🟢 السطر السحري: طباعة النص الخام الذي أرسله C++ 🟢
+                        println("\n==================================================")
+                        println("🕵️ RAW JSON FROM C++:")
+                        println(jsonToparse)
+                        println("==================================================\n")
                         val event = json.decodeFromString<ResultEvent>(jsonToparse)
                         resultEvent = event
 
@@ -76,11 +87,13 @@ object CliInterop {
 
                         onEvent(event)
                     }
+
                     line.contains("\"type\":\"log\"") -> {
                         val event = json.decodeFromString<LogEvent>(line)
                         logEvents.add(event)
                         onEvent(event)
                     }
+
                     line.contains("\"type\":\"proposal\"") -> {
                         val event = json.decodeFromString<ProposalEvent>(line)
                         onEvent(event)
@@ -104,6 +117,7 @@ object CliInterop {
                         resultEvent = event
                         onEvent(event)
                     }
+
                     else -> {
                         val fallback = LogEvent(agent = "SYS", msg = line, level = "warn")
                         logEvents.add(fallback)
@@ -127,11 +141,11 @@ object CliInterop {
             ?: throw RuntimeException("Engine produced no final ResultEvent. Check C++ logs.")
 
         val masOutput = MASOutput(
-            chosenArh  = result.chosenArh,
-            w1         = result.w1,
-            w2         = result.w2,
-            alertTime  = result.alertTime,
-            proposals  = result.proposals
+            chosenArh = result.chosenArh,
+            w1 = result.w1,
+            w2 = result.w2,
+            alertTime = result.alertTime,
+            proposals = result.proposals
         )
         return EngineResult(output = masOutput, logs = logEvents)
     }
@@ -140,15 +154,24 @@ object CliInterop {
         val resourcesDir = System.getProperty("compose.application.resources.dir")
         if (resourcesDir != null) {
             val f = File(resourcesDir, "core_engine.exe")
-            if (f.exists()) return f
+            if (f.exists()) {
+                println("🚀 RUNNING ENGINE FROM RESOURCES: ${f.absolutePath}")
+                return f
+            }
         }
         var dir = File(System.getProperty("user.dir"))
         if (dir.name == "composeApp") dir = dir.parentFile
 
         listOf("build/core_engine.exe", "build_mas/core_engine.exe").forEach {
             val f = File(dir, it)
-            if (f.exists()) return f
+            if (f.exists()) {
+                println("🚀 RUNNING ENGINE FROM BUILD DIR: ${f.absolutePath}")
+                return f
+            }
         }
-        return File(dir, "build/core_engine.exe")
+
+        val defaultFile = File(dir, "build/core_engine.exe")
+        println("⚠️ ENGINE NOT FOUND! DEFAULTING TO: ${defaultFile.absolutePath}")
+        return defaultFile
     }
 }
