@@ -76,7 +76,7 @@ public:
     std::vector<CBMProposal> handleAnomaly(double schedulingStart, const std::vector<ProductionJob>& jobs, const std::vector<TBMBlock>& tbmBlocks, std::string strategy, double rulMin, double rulProb, double rulMax) {
         jsonLog("AMS", "Anomaly at t=" + std::to_string((int)alertTime) + ". Delegating to AMC...");
         DiagnosticResult diag = amc->analyzeAnomaly(alertTime, rulMin, rulProb, rulMax);
-        auto proposals = asrh->callForProposals(diag, strategy, alertTime, tbmBlocks);
+        auto proposals = asrh->callForProposals(diag, strategy, alertTime, schedulingStart, tbmBlocks);
 
         if (proposals.empty()) {
             jsonLog("AMS", "ERROR: No valid proposals! System Abort.", "error");
