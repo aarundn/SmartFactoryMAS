@@ -136,6 +136,10 @@ private:
               << ",\"requested_time\":" << m.requestedTime << ",\"accepted\":" << (m.accepted ? "true" : "false") << "}";
         }
         j << "]}";
-        std::cout << j.str() << std::endl;
+
+        // 🌟 التعديل هنا: الطباعة فقط إذا لم نكن في وضع الصمت 🌟
+        if (!g_silentMode) {
+            std::cout << j.str() << std::endl;
+        }
     }
 };

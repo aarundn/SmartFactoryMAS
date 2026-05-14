@@ -11,9 +11,9 @@
 #include "AMV.h"
 #include "AMS.h"
 #include "JsonLogger.h"
+#include "BatchSimulator.h" // 🌟 أضفنا ملف المختبر هنا 🌟
 
 // ── JSON helpers ─────────────────────────────────────────────────────────────
-
 static double getNum(const std::string& json, const std::string& key) {
     auto pos = json.find("\"" + key + "\"");
     if (pos == std::string::npos) return -1;
@@ -46,11 +46,7 @@ static std::vector<std::string> splitArray(const std::string& json, const std::s
 }
 
 // ── Neighbor machine parsers ──────────────────────────────────────────────────
-
-// Parses a neighbor machine's schedule blocks from a JSON array key
-static std::vector<ScheduleBlock> parseNeighborSchedule(
-        const std::string& json, const std::string& key)
-{
+static std::vector<ScheduleBlock> parseNeighborSchedule(const std::string& json, const std::string& key) {
     std::vector<ScheduleBlock> schedule;
     for (const auto& item : splitArray(json, key)) {
         ScheduleBlock b;
@@ -69,45 +65,31 @@ static std::vector<ScheduleBlock> parseNeighborSchedule(
 static AMA* buildAMA(const std::string& json) {
     std::string amaId = getStr(json, "ama_id");
     if (amaId.empty()) return nullptr;
-
     auto schedule = parseNeighborSchedule(json, "ama_schedule");
-
     AMA* ama = new AMA(amaId, schedule);
-
-    // Override completion times from explicit job_links if provided
     for (const auto& jl : splitArray(json, "job_links")) {
         std::string jobId   = getStr(jl, "job_id");
         double readyTime    = getNum(jl, "ready_time");
-        if (!jobId.empty() && readyTime >= 0)
-            ama->jobCompletionTimes[jobId] = readyTime;
+        if (!jobId.empty() && readyTime >= 0) ama->jobCompletionTimes[jobId] = readyTime;
     }
-
     return ama;
 }
 
 static AMV* buildAMV(const std::string& json) {
     std::string amvId = getStr(json, "amv_id");
     if (amvId.empty()) return nullptr;
-
     auto schedule = parseNeighborSchedule(json, "amv_schedule");
-
     AMV* amv = new AMV(amvId, schedule);
-
-    // Override expected arrivals from explicit job_links if provided
     for (const auto& jl : splitArray(json, "job_links")) {
         std::string jobId          = getStr(jl, "job_id");
         double expectedStartOnNext = getNum(jl, "expected_start_on_next");
-        if (!jobId.empty() && expectedStartOnNext >= 0)
-            amv->expectedArrivalTimes[jobId] = expectedStartOnNext;
+        if (!jobId.empty() && expectedStartOnNext >= 0) amv->expectedArrivalTimes[jobId] = expectedStartOnNext;
     }
-
     return amv;
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
-
 int main() {
-    // Read JSON from Kotlin UI via stdin
     std::string input;
     std::ostringstream buf;
     buf << std::cin.rdbuf();
@@ -120,7 +102,60 @@ int main() {
         return 1;
     }
 
-    // ── Parse common fields ───────────────────────────────────────────────────
+    std::string mode = getStr(input, "mode");
+    if (mode.empty()) mode = "single";
+
+    // 🌟 🌟 🌟 الإضافة الجديدة: وضع الاختبار المجمع (Batch Mode) 🌟 🌟 🌟
+    if (mode == "batch") {
+        BatchParams params;
+        params.num_machines  = (int)getNum(input, "machines");
+        params.num_jobs      = (int)getNum(input, "jobs");
+        params.num_arhs      = (int)getNum(input, "arhs");
+        params.w1            = getNum(input, "w1");
+        params.w2            = getNum(input, "w2");
+        params.num_scenarios = (int)getNum(input, "scenarios");
+
+        BatchSimulationResult result = BatchSimulator::runBatch(params);
+
+        std::string json = "{";
+        json += "\"type\":\"batch_result\",";
+
+        json += "\"stability\": {";
+        json += "\"stable\":" + std::to_string(result.stability_index.stable_percent) + ",";
+        json += "\"improved\":" + std::to_string(result.stability_index.improved_percent) + ",";
+        json += "\"deteriorated\":" + std::to_string(result.stability_index.deteriorated_percent);
+        json += "},";
+
+        json += "\"recommendation\": \"" + result.ai_recommendation + "\",";
+
+        json += "\"reactivity\": [";
+        for (size_t i = 0; i < result.reactivity_chart_data.size(); ++i) {
+            auto& data = result.reactivity_chart_data[i];
+            json += "{\"jobs\":" + std::to_string(data.num_jobs) + ",";
+            json += "\"single_ms\":" + std::to_string(data.single_machine_time_ms) + ",";
+            json += "\"multi_ms\":" + std::to_string(data.multi_machine_time_ms) + "}";
+            if (i < result.reactivity_chart_data.size() - 1) json += ",";
+        }
+        json += "],";
+
+        // الهروب المزدوج للـ CSV لكي لا يكسر الـ JSON
+        std::string safeCsv = result.csv_export_data;
+        size_t pos = 0;
+        while ((pos = safeCsv.find('\n', pos)) != std::string::npos) {
+            safeCsv.replace(pos, 1, "\\n"); pos += 2;
+        }
+        json += "\"csv_data\": \"" + safeCsv + "\"";
+
+        json += "}";
+
+        // طباعة النتيجة لكي تقرأها Kotlin
+        std::cout << json << std::endl;
+        return 0; // إنهاء التنفيذ هنا
+    }
+    // 🌟 🌟 🌟 نهاية الإضافة الجديدة 🌟 🌟 🌟
+
+
+    // ── Parse common fields for single/multi mode ─────────────────────────────
     double alertTime       = getNum(input, "alert_time");
     double schedulingStart = getNum(input, "scheduling_start");
     double w1              = getNum(input, "w1");
@@ -129,8 +164,6 @@ int main() {
     double rulProb         = getNum(input, "rul_prob");
     double rulMax          = getNum(input, "rul_max");
     std::string strategy   = getStr(input, "strategy");
-    std::string mode       = getStr(input, "mode"); // "single" or "multi"
-    if (mode.empty()) mode = "single";              // default to single
 
     // ── Parse production jobs ─────────────────────────────────────────────────
     std::vector<ProductionJob> jobs;
