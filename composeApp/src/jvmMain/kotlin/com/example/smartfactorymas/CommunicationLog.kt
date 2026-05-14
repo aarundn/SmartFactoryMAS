@@ -30,6 +30,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import kotlin.time.Clock
 
 @Composable
 fun CommunicationLog(logs: List<LogEvent>, modifier: Modifier = Modifier) {
@@ -51,13 +55,20 @@ fun CommunicationLog(logs: List<LogEvent>, modifier: Modifier = Modifier) {
                     else -> Primary
                 }
                 Row {
-                    Text("[SYS_TIME]", color = OnSurfaceVariant, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    Text("[${System.currentTimeMillis().toTime()}]", color = OnSurfaceVariant, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.width(6.dp))
-                    Text("${event.agent}:", color = agentCol, fontWeight = FontWeight.Bold, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    Text(text = "${event.agent}:", color = agentCol, fontWeight = FontWeight.Bold, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                     Spacer(Modifier.width(6.dp))
                     Text(event.msg, color = OnSurface, fontSize = 11.sp, fontFamily = FontFamily.Monospace, lineHeight = 16.sp)
                 }
             }
         }
     }
+}
+fun Long.toTime(): String {
+    val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
+
+    return Instant.ofEpochMilli(this)
+        .atZone(ZoneId.systemDefault())
+        .format(formatter)
 }
