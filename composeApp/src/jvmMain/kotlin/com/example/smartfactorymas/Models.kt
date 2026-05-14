@@ -182,12 +182,12 @@ data class NeighborBlockUi(val jobId: String, val start: Double, val end: Double
 
 data class AmaUiConfig(
     val id: String = "AMA_1",
-    val blocks: List<NeighborBlockUi> = listOf(NeighborBlockUi("PRD-AMA-01", 0.0, 50.0))
+    val blocks: List<NeighborBlockUi> = listOf(NeighborBlockUi("P1", 0.0, 50.0))
 )
 
 data class AmvUiConfig(
     val id: String = "AMV_1",
-    val blocks: List<NeighborBlockUi> = listOf(NeighborBlockUi("PRD-AMV-01", 70.0, 120.0))
+    val blocks: List<NeighborBlockUi> = listOf(NeighborBlockUi("P3", 70.0, 120.0))
 )
 
 enum class MachineStatus { STEADY, ANOMALY, RESCHEDULING, CONFLICT, RESOLVED, SHIFTED, DONE }
@@ -202,7 +202,7 @@ data class MultiMachineState(
     val amvOriginalSchedule: List<TaskBlock> = emptyList(),
     val messages: List<NegotiationMessage> = emptyList(),
     val logs: List<LogEvent> = emptyList(),
-    val anomalyTime: Double = 50.0,
+    val anomalyTime: Double = 8.0,
     val amaDeliveryTime: Double = 45.0,
     val amvExpectedTime: Double = 85.0,
     val amaStatus: MachineStatus = MachineStatus.STEADY,

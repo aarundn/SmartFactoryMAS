@@ -50,12 +50,7 @@ fun MultiMachineControlPanel(
 
             MmNumberField("Anomaly Time (t)", mmState.anomalyTime, Modifier.fillMaxWidth().padding(bottom = 8.dp))
             { onMmStateChange(mmState.copy(anomalyTime = it)) }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MmNumberField("AMA Delivery Time", mmState.amaDeliveryTime, Modifier.weight(1f))
-                { onMmStateChange(mmState.copy(amaDeliveryTime = it)) }
-                MmNumberField("AMV Expected Time", mmState.amvExpectedTime, Modifier.weight(1f))
-                { onMmStateChange(mmState.copy(amvExpectedTime = it)) }
-            }
+
             Spacer(Modifier.height(12.dp))
 
             // Simulate button

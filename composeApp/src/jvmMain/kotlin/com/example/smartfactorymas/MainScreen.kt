@@ -85,23 +85,39 @@ fun MainScreen() {
             } ?: emptyList()
         }
 
-        // 1. استخراج جدول AMS (الأساسي والمُحدث)
         val amsLocalSchedule = mapSchedule(ganttState.masOutput?.chosenProposal()?.schedule)
         val amsGlobalSchedule = mapSchedule(ganttState.multiMachineOutput?.amsSchedule).ifEmpty { amsLocalSchedule }
 
-        // 2. استخراج جداول AMA و AMV وتحديد الجدول الأصلي إذا لم يتم التحديث
-        val amaSchedule = mapSchedule(ganttState.multiMachineOutput?.amaSchedule).ifEmpty {
-            amaConfig.blocks.map { TaskBlock(it.jobId, TaskType.PRODUCTION, it.start, it.end - it.start) }
-        }
-        val amvShiftedSchedule = mapSchedule(ganttState.multiMachineOutput?.amvSchedule).ifEmpty {
-            amvConfig.blocks.map { TaskBlock(it.jobId, TaskType.PRODUCTION, it.start, it.end - it.start) }
-        }
+        val amaSchedule = amaConfig.blocks.map { TaskBlock(it.jobId, TaskType.PRODUCTION, it.start, it.end - it.start) }
+        val amvOriginalSchedule = amvConfig.blocks.map { TaskBlock(it.jobId, TaskType.PRODUCTION, it.start, it.end - it.start) }.sortedBy { it.startTime }
 
-        // 🌟 الإصلاح: هنا نأخذ الجدول الأصلي لـ AMV من المدخلات لكي يتم عرضه كـ 'مخفي' تحت المربع المزاح
-        val amvOriginalSchedule = amvConfig.blocks.map { TaskBlock(it.jobId, TaskType.PRODUCTION, it.start, it.end - it.start) }
-
-        // 3. جلب جميع الرسائل من مخرجات C++
         val allMessages = ganttState.multiMachineOutput?.messages ?: emptyList()
+
+        // 🌟 خوارزمية الإزاحة الحقيقية (Ripple Effect) لمنع تداخل المهام في AMV 🌟
+        val amvShiftedSchedule = mutableListOf<TaskBlock>()
+        var lastEndTime = 0.0
+
+        for (block in amvOriginalSchedule) {
+            // هل توجد رسالة تأخير لهذه المهمة تحديداً؟
+            val delayMsg = allMessages.find { it.type == "I_MESSAGE" && it.jobId == block.id }
+            var newStart = block.startTime
+
+            // تطبيق التأخير القادم من الرسالة
+            if (delayMsg != null && delayMsg.requestedTime > newStart) {
+                newStart = delayMsg.requestedTime
+            }
+
+            // منع التداخل: المهمة لا يمكن أن تبدأ قبل انتهاء المهمة التي تسبقها في AMV
+            if (newStart < lastEndTime) {
+                newStart = lastEndTime
+            }
+
+            val newDuration = block.duration // مدة المهمة تبقى ثابتة
+            val newEnd = newStart + newDuration
+
+            amvShiftedSchedule.add(block.copy(startTime = newStart))
+            lastEndTime = newEnd // تحديث الوقت للمهمة القادمة
+        }
 
         val baseMmState = mmState.copy(
             amaSchedule = amaSchedule,
@@ -122,12 +138,12 @@ fun MainScreen() {
             )
             4 -> baseMmState.copy(
                 currentStep = step,
-                amsSchedule = amsGlobalSchedule, // 🌟 الإزاحة الحقيقية لـ AMS هنا
-                amvSchedule = amvShiftedSchedule, // 🌟 الإزاحة الحقيقية لـ AMV هنا
+                amsSchedule = amsGlobalSchedule,
+                amvSchedule = amvShiftedSchedule, // 🌟 الجدول المُزاح المترابط بدون تداخل
                 messages = allMessages,
                 amsStatus = MachineStatus.DONE,
                 amaStatus = if (ganttState.multiMachineOutput?.upstreamConflict == true) MachineStatus.RESOLVED else MachineStatus.STEADY,
-                amvStatus = if (ganttState.multiMachineOutput?.downstreamConflict == true) MachineStatus.SHIFTED else MachineStatus.STEADY
+                amvStatus = if (amvShiftedSchedule != amvOriginalSchedule) MachineStatus.SHIFTED else MachineStatus.STEADY
             )
             else -> baseMmState
         }
@@ -249,20 +265,15 @@ fun MainScreen() {
             val historyJobs= initSched.filter { it.startTime <= anomalyTime && it.type == TaskType.PRODUCTION }
             val engStart   = if (historyJobs.isNotEmpty()) historyJobs.maxOf { it.endTime } else schedulingStart
 
-            // 🌟 1. الإصلاح الجذري: تحديد أول وآخر مهمة إنتاج من الجدول المحلي الفعلي 🌟
-            val localOptimalSchedule = ganttState.masOutput?.chosenProposal()?.schedule?.filter { it.type == "PRODUCTION" }
-            val firstJobId = localOptimalSchedule?.firstOrNull()?.id ?: futureJobs.firstOrNull()?.id ?: "P1"
-            val lastJobId = localOptimalSchedule?.lastOrNull()?.id ?: futureJobs.lastOrNull()?.id ?: "P3"
+            // 🌟 2. قراءة القيود ديناميكياً من كل مهمة تم إدخالها في AMA و AMV 🌟
+            val jobLinks = amaConfig.blocks.map {
+                JobLinkInput(jobId = it.jobId, readyTime = it.end) // $c_{(i-1)k}$
+            }
 
-            // 2. تحديث الروابط لتعمل على الأسماء الصحيحة
-            val jobLinks = listOf(
-                JobLinkInput(jobId = firstJobId, readyTime = mmState.amaDeliveryTime)
-            )
-            val amvJobLinks = listOf(
-                AmvJobLinkInput(jobId = lastJobId, expectedStartOnNext = mmState.amvExpectedTime)
-            )
+            val amvJobLinks = amvConfig.blocks.map {
+                AmvJobLinkInput(jobId = it.jobId, expectedStartOnNext = it.start) // $t_{(i+1)k}$
+            }
 
-            // 3. بناء المدخلات للمحرك
             val input = EngineInput(
                 mode = "multi",
                 strategy = strategy,
@@ -277,13 +288,12 @@ fun MainScreen() {
                 tbmBlocks = tbms,
                 arhAgents = arhs.map { ArhInput(it.id, it.availStart, it.availEnd, it.durMin, it.durProb, it.durMax) },
 
-                // 🌟 تمرير أسماء المهام الديناميكية لكي يتعرف عليها C++ ويقاطعها! 🌟
                 amaId = amaConfig.id,
-                amaSchedule = amaConfig.blocks.map { NeighborBlockInput(firstJobId, "PRODUCTION", it.start, mmState.amaDeliveryTime) },
+                amaSchedule = amaConfig.blocks.map { NeighborBlockInput(it.jobId, "PRODUCTION", it.start, it.end) },
                 jobLinks = jobLinks,
 
                 amvId = amvConfig.id,
-                amvSchedule = amvConfig.blocks.map { NeighborBlockInput(lastJobId, "PRODUCTION", mmState.amvExpectedTime, it.end) },
+                amvSchedule = amvConfig.blocks.map { NeighborBlockInput(it.jobId, "PRODUCTION", it.start, it.end) },
                 amvJobLinks = amvJobLinks
             )
 
@@ -300,14 +310,10 @@ fun MainScreen() {
 
             delay(800)
             if (res.multiMachineResult != null) {
-                applyMultiMachineStep(0)
-                delay(800)
-                applyMultiMachineStep(1)
-                delay(1200)
-                applyMultiMachineStep(2)
-                delay(1200)
-                applyMultiMachineStep(3)
-                delay(1500)
+                applyMultiMachineStep(0); delay(800)
+                applyMultiMachineStep(1); delay(1200)
+                applyMultiMachineStep(2); delay(1200)
+                applyMultiMachineStep(3); delay(1500)
                 applyMultiMachineStep(4)
             } else {
                 mmState = mmState.copy(logs = mmState.logs + LogEvent("SYS", "Failed to get multi-machine output", "error"))
