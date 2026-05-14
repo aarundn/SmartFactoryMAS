@@ -26,7 +26,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// 🌟 ألوان الآلات المخصصة (تم تمييز AMA بلون مختلف تماماً) 🌟
+// 🌟 ألوان الآلات المخصصة 🌟
 private val AMA_TOP = Color(0xFFFDE68A)    // Amber Light
 private val AMA_BOTTOM = Color(0xFFFCD34D) // Amber Dark
 private val AMA_BORDER = Color(0xFFD97706) // Amber Border
@@ -99,13 +99,11 @@ fun MultiMachineGanttChart(
                     val labelW = 80.dp.toPx()
                     val axisH = 32.dp.toPx()
                     val laneH = 72.dp.toPx()
-                    // 🌟 تمت زيادة المساحة بين الآلات لظهور الأسهم بشكل أفضل 🌟
-                    val msgZoneH = 86.dp.toPx()
+                    val msgZoneH = 100.dp.toPx() // مساحة واسعة للرسائل
                     val chartW = size.width - labelW
 
                     val allBlocks = state.amaSchedule + state.amsSchedule + state.amvSchedule + state.amvOriginalSchedule
 
-                    // التمدد المرن لمحور الوقت
                     val maxTime = maxOf(
                         160.0,
                         allBlocks.maxOfOrNull { it.startTime + it.duration } ?: 160.0) + 10.0
@@ -177,36 +175,37 @@ fun MultiMachineGanttChart(
                             "t=${state.anomalyTime.toInt()}",
                             TextStyle(color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         )
-                        val boxW = aLabel.size.width + 10f
+                        val boxW = aLabel.size.width + 10f;
                         val boxH = aLabel.size.height + 6f
                         drawRoundRect(
                             Color(0xFFDC2626),
                             topLeft = Offset((anomalyX - boxW / 2f).coerceAtLeast(labelW), axisH - boxH),
                             size = Size(boxW, boxH), cornerRadius = CornerRadius(3.dp.toPx())
                         )
-                        drawText(
-                            aLabel,
-                            topLeft = Offset((anomalyX - boxW / 2f).coerceAtLeast(labelW) + 5f, axisH - boxH + 3f)
-                        )
+                        drawText(aLabel, topLeft = Offset((anomalyX - boxW / 2f).coerceAtLeast(labelW) + 5f, axisH - boxH + 3f))
                     }
 
-                    // ── M_MESSAGE arrows ──────────────────────────────
+                    // ── M_MESSAGE arrows (UPWARD: AMS -> AMA) ──────────────────────────────
                     val mMessages = state.messages.filter { it.type == "M_MESSAGE" }
                     mMessages.forEachIndexed { idx, msg ->
-                        val msgX = labelW + (msg.requestedTime * scale).toFloat()
-                        drawMessageArrow(
-                            this, textMeasurer, msgX, msg1Y, msgZoneH, msg,
-                            arrowColor = Color(0xFF855316), bgColor = Color(0xFFFFDCBD), textColor = Color(0xFF683C00)
+                        val startX = labelW + (msg.originalTime * scale).toFloat()
+                        val endX = labelW + (msg.requestedTime * scale).toFloat()
+                        drawCurvedMessageArrow(
+                            this, textMeasurer, startX, endX, msg1Y, msgZoneH, msg,
+                            arrowColor = Color(0xFFD97706), bgColor = Color(0xFFFEF3C7), textColor = Color(0xFF92400E),
+                            isUpward = true
                         )
                     }
 
-                    // ── I_MESSAGE arrows ──────────────────────────────
+                    // ── I_MESSAGE arrows (DOWNWARD: AMS -> AMV) ──────────────────────────────
                     val iMessages = state.messages.filter { it.type == "I_MESSAGE" }
                     iMessages.forEachIndexed { idx, msg ->
-                        val msgX = labelW + (msg.requestedTime * scale).toFloat()
-                        drawMessageArrow(
-                            this, textMeasurer, msgX, msg2Y, msgZoneH, msg,
-                            arrowColor = Color(0xFF4B5A9C), bgColor = Color(0xFFDDE1FF), textColor = Color(0xFF001354)
+                        val startX = labelW + (msg.originalTime * scale).toFloat()
+                        val endX = labelW + (msg.requestedTime * scale).toFloat()
+                        drawCurvedMessageArrow(
+                            this, textMeasurer, startX, endX, msg2Y, msgZoneH, msg,
+                            arrowColor = Color(0xFF4B5A9C), bgColor = Color(0xFFDDE1FF), textColor = Color(0xFF001354),
+                            isUpward = false
                         )
                     }
                 }
@@ -230,12 +229,7 @@ fun MultiMachineGanttChart(
                     4 -> "Iteration: 4 (Global Sync Complete)"
                     else -> "Iteration: ${state.currentStep}"
                 }
-                Text(
-                    iterLabel,
-                    color = OnSurfaceVariant,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
+                Text(iterLabel, color = OnSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 val canNext = state.currentStep < 4 && state.amsSchedule.isNotEmpty() && !isRunning
                 OutlinedButton(
                     onClick = onNextStep,
@@ -258,14 +252,12 @@ private fun drawMachineRow(
     topColor: Color, bottomColor: Color, borderColor: Color, textColor: Color,
     originalSchedule: List<TaskBlock> = emptyList()
 ) = with(scope) {
-    // Row background
     drawRoundRect(
         Color(0xFFF1F5F9).copy(alpha = 0.5f),
         topLeft = Offset(labelW, laneY), size = Size(chartW, laneH),
         cornerRadius = CornerRadius(8.dp.toPx())
     )
 
-    // Label background
     val labelBg = when (status) {
         MachineStatus.ANOMALY, MachineStatus.CONFLICT -> Color(0xFFFEE2E2)
         MachineStatus.RESOLVED, MachineStatus.DONE -> Color(0xFFDCFCE7)
@@ -310,7 +302,6 @@ private fun drawMachineRow(
         topLeft = Offset(8.dp.toPx(), laneY + 8.dp.toPx() + idLayout.size.height + 4.dp.toPx())
     )
 
-    // Ghost original blocks (for shifted AMV)
     originalSchedule.forEach { block ->
         val sx = labelW + (block.startTime * scale).toFloat()
         val bw = (block.duration * scale).toFloat().coerceAtLeast(2f)
@@ -327,7 +318,6 @@ private fun drawMachineRow(
         )
     }
 
-    // 🌟 Actual blocks (Exact flexible styling) 🌟
     blocks.forEach { block ->
         val startPx = labelW + (block.startTime * scale).toFloat()
         val widthPx = (block.duration * scale).toFloat().coerceAtLeast(2f)
@@ -341,7 +331,6 @@ private fun drawMachineRow(
             TaskType.PRODUCTION -> listOf(topColor, bottomColor, borderColor, textColor)
         }
 
-        // A. Drop Shadow
         drawRoundRect(
             color = Color.Black.copy(alpha = 0.1f),
             topLeft = Offset(startPx, blockTop + 3.dp.toPx()),
@@ -349,7 +338,6 @@ private fun drawMachineRow(
             cornerRadius = cornerRad
         )
 
-        // B. Gradient Fill
         drawRoundRect(
             brush = Brush.verticalGradient(listOf(tc, bc), startY = blockTop, endY = blockTop + blockHeight),
             topLeft = Offset(startPx, blockTop),
@@ -357,7 +345,6 @@ private fun drawMachineRow(
             cornerRadius = cornerRad
         )
 
-        // C. Solid Border
         drawRoundRect(
             color = bBorder,
             topLeft = Offset(startPx, blockTop),
@@ -366,13 +353,11 @@ private fun drawMachineRow(
             style = Stroke(1.dp.toPx())
         )
 
-        // D. Centered Bold Text (With overlap prevention!)
         val textLayout = measurer.measure(
             text = block.id,
             style = TextStyle(color = tCol, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         )
 
-        // 🌟 منع تداخل النص خارج المربع (تمت إعادته) 🌟
         if (widthPx > textLayout.size.width + 4f) {
             drawText(
                 textLayoutResult = textLayout,
@@ -385,42 +370,73 @@ private fun drawMachineRow(
     }
 }
 
-private fun drawMessageArrow(
+// 🌟 دالة رسم الأسهم المنحنية (Curved Arrows) الذكية 🌟
+private fun drawCurvedMessageArrow(
     scope: DrawScope, measurer: androidx.compose.ui.text.TextMeasurer,
-    x: Float, zoneY: Float, zoneH: Float,
+    startX: Float, endX: Float, zoneY: Float, zoneH: Float,
     msg: NegotiationMessage,
-    arrowColor: Color, bgColor: Color, textColor: Color
+    arrowColor: Color, bgColor: Color, textColor: Color,
+    isUpward: Boolean
 ) = with(scope) {
     val midY = zoneY + zoneH / 2f
-    val topY = zoneY + 6.dp.toPx()
-    val botY = zoneY + zoneH - 6.dp.toPx()
+    val topY = zoneY + 12.dp.toPx()
+    val botY = zoneY + zoneH - 12.dp.toPx()
     val tipSize = 6.dp.toPx()
 
-    // Dashed vertical line
-    drawLine(
-        arrowColor, Offset(x, topY), Offset(x, botY - tipSize), 2f,
-        pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 4f)), cap = StrokeCap.Round
-    )
-    // Arrowhead
-    val path = Path().apply {
-        moveTo(x, botY)
-        lineTo(x - tipSize, botY - tipSize)
-        lineTo(x + tipSize, botY - tipSize)
-        close()
-    }
-    drawPath(path, arrowColor)
+    // حساب نقاط البداية والنهاية بناءً على الاتجاه (من AMS إلى AMA أم من AMS إلى AMV)
+    val startPtX = startX
+    val startPtY = if (isUpward) botY else topY
+    val endPtX = endX
+    val endPtY = if (isUpward) topY + tipSize else botY - tipSize
 
-    // Pill badge at midpoint
+    // رسم مسار بيزييه (Bezier Curve)
+    val path = Path().apply {
+        moveTo(startPtX, startPtY)
+        cubicTo(
+            startPtX, midY,
+            endPtX, midY,
+            endPtX, endPtY
+        )
+    }
+
+    drawPath(
+        path = path,
+        color = arrowColor,
+        style = Stroke(
+            width = 2.5f,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)),
+            cap = StrokeCap.Round
+        )
+    )
+
+    // رسم رأس السهم في النهاية (يشير للأعلى أو للأسفل)
+    val arrowHead = Path().apply {
+        if (isUpward) { // رأس السهم للأعلى لرسالة AMA
+            moveTo(endX, topY)
+            lineTo(endX - tipSize, topY + tipSize)
+            lineTo(endX + tipSize, topY + tipSize)
+            close()
+        } else { // رأس السهم للأسفل لرسالة AMV
+            moveTo(endX, botY)
+            lineTo(endX - tipSize, botY - tipSize)
+            lineTo(endX + tipSize, botY - tipSize)
+            close()
+        }
+    }
+    drawPath(arrowHead, arrowColor)
+
+    // صندوق نص الرسالة (Badge) يوضع في منتصف المسافة
     val line1 = "${msg.type}: ${msg.jobId}"
     val line2 = "t${msg.originalTime.toInt()} → t${msg.requestedTime.toInt()} ${if (msg.accepted) "✓" else "✗"}"
-    val l1 = measurer.measure(
-        line1,
-        TextStyle(color = textColor, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-    )
-    val l2 = measurer.measure(line2, TextStyle(color = textColor, fontSize = 8.sp))
-    val pillW = maxOf(l1.size.width, l2.size.width) + 14f
-    val pillH = l1.size.height + l2.size.height + 10f
-    val pillX = (x - pillW / 2f).coerceAtLeast(0f)
+    val l1 = measurer.measure(line1, TextStyle(color = textColor, fontSize = 9.sp, fontWeight = FontWeight.Bold))
+    val l2 = measurer.measure(line2, TextStyle(color = textColor, fontSize = 9.sp))
+
+    val pillW = maxOf(l1.size.width, l2.size.width) + 16f
+    val pillH = l1.size.height + l2.size.height + 12f
+
+    // وضع الصندوق في منتصف المسافة الأفقية للمنحنى
+    val midX = (startX + endX) / 2f
+    val pillX = (midX - pillW / 2f).coerceAtLeast(0f)
     val pillY = midY - pillH / 2f
 
     drawRoundRect(
@@ -431,6 +447,6 @@ private fun drawMessageArrow(
         arrowColor, topLeft = Offset(pillX, pillY), size = Size(pillW, pillH),
         cornerRadius = CornerRadius(6.dp.toPx()), style = Stroke(1.dp.toPx())
     )
-    drawText(l1, topLeft = Offset(pillX + 7f, pillY + 5f))
-    drawText(l2, topLeft = Offset(pillX + 7f, pillY + 5f + l1.size.height + 2f))
+    drawText(l1, topLeft = Offset(pillX + 8f, pillY + 6f))
+    drawText(l2, topLeft = Offset(pillX + 8f, pillY + 6f + l1.size.height + 2f))
 }
