@@ -26,13 +26,21 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// 🌟 ألوان الآلات المخصصة 🌟
-private val AMA_TOP = Color(0xFF5CD784) // Indigo Light
-private val AMA_BOTTOM = Color(0xFFA1ECAC) // Indigo Dark
-private val AMS_TOP = Color(0xFFC7D2FE)
-private val AMS_BOTTOM = Color(0xFFA5B4FC)
-private val AMV_TOP = Color(0xFF6EE7B7) // Green Light
+// 🌟 ألوان الآلات المخصصة (تم تمييز AMA بلون مختلف تماماً) 🌟
+private val AMA_TOP = Color(0xFFFDE68A)    // Amber Light
+private val AMA_BOTTOM = Color(0xFFFCD34D) // Amber Dark
+private val AMA_BORDER = Color(0xFFD97706) // Amber Border
+private val AMA_TEXT = Color(0xFF78350F)   // Amber Text (Dark Brown)
+
+private val AMS_TOP = Color(0xFFC7D2FE)    // Indigo Light
+private val AMS_BOTTOM = Color(0xFFA5B4FC) // Indigo Dark
+private val AMS_BORDER = Color(0xFF818CF8) // Indigo Border
+private val AMS_TEXT = Color(0xFF312E81)   // Indigo Text
+
+private val AMV_TOP = Color(0xFF6EE7B7)    // Green Light
 private val AMV_BOTTOM = Color(0xFF34D399) // Green Dark
+private val AMV_BORDER = Color(0xFF10B981) // Green Border
+private val AMV_TEXT = Color(0xFF064E3B)   // Green Text
 
 @Composable
 fun MultiMachineGanttChart(
@@ -91,14 +99,13 @@ fun MultiMachineGanttChart(
                     val labelW = 80.dp.toPx()
                     val axisH = 32.dp.toPx()
                     val laneH = 72.dp.toPx()
-                    val msgZoneH = 56.dp.toPx()
+                    // 🌟 تمت زيادة المساحة بين الآلات لظهور الأسهم بشكل أفضل 🌟
+                    val msgZoneH = 86.dp.toPx()
                     val chartW = size.width - labelW
 
-                    val allBlocks =
-                        state.amaSchedule + state.amsSchedule + state.amvSchedule + state.amvOriginalSchedule
+                    val allBlocks = state.amaSchedule + state.amsSchedule + state.amvSchedule + state.amvOriginalSchedule
 
-                    // 🌟 الحـــل السـحــري للـ Overlapping 🌟
-                    // تم التغيير من endMax إلى (startTime + duration) لضمان أن محور الوقت يتمدد دائماً ليحتوي آخر مهمة مُزاحة!
+                    // التمدد المرن لمحور الوقت
                     val maxTime = maxOf(
                         160.0,
                         allBlocks.maxOfOrNull { it.startTime + it.duration } ?: 160.0) + 10.0
@@ -139,51 +146,21 @@ fun MultiMachineGanttChart(
 
                     // ── Draw each machine row ─────────────────────────
                     drawMachineRow(
-                        this,
-                        textMeasurer,
-                        labelW,
-                        amaY,
-                        laneH,
-                        chartW,
-                        scale,
-                        state.amaId,
-                        state.amaSchedule,
-                        state.amaStatus,
-                        topColor = AMA_TOP,
-                        bottomColor = AMA_BOTTOM,
-                        borderColor = Color(0xFF096D23)
+                        this, textMeasurer, labelW, amaY, laneH, chartW, scale,
+                        state.amaId, state.amaSchedule, state.amaStatus,
+                        topColor = AMA_TOP, bottomColor = AMA_BOTTOM, borderColor = AMA_BORDER, textColor = AMA_TEXT
                     )
 
                     drawMachineRow(
-                        this,
-                        textMeasurer,
-                        labelW,
-                        amsY,
-                        laneH,
-                        chartW,
-                        scale,
-                        "AMS (Subject)",
-                        state.amsSchedule,
-                        state.amsStatus,
-                        topColor = AMS_TOP,
-                        bottomColor = AMS_BOTTOM,
-                        borderColor = Color(0xFF818CF8)
+                        this, textMeasurer, labelW, amsY, laneH, chartW, scale,
+                        "AMS (Subject)", state.amsSchedule, state.amsStatus,
+                        topColor = AMS_TOP, bottomColor = AMS_BOTTOM, borderColor = AMS_BORDER, textColor = AMS_TEXT
                     )
 
                     drawMachineRow(
-                        this,
-                        textMeasurer,
-                        labelW,
-                        amvY,
-                        laneH,
-                        chartW,
-                        scale,
-                        state.amvId,
-                        state.amvSchedule,
-                        state.amvStatus,
-                        topColor = AMV_TOP,
-                        bottomColor = AMV_BOTTOM,
-                        borderColor = Color(0xFF10B981), // Green Border
+                        this, textMeasurer, labelW, amvY, laneH, chartW, scale,
+                        state.amvId, state.amvSchedule, state.amvStatus,
+                        topColor = AMV_TOP, bottomColor = AMV_BOTTOM, borderColor = AMV_BORDER, textColor = AMV_TEXT,
                         originalSchedule = if (state.currentStep >= 4 && state.downstreamConflict) state.amvOriginalSchedule else emptyList()
                     )
 
@@ -198,28 +175,18 @@ fun MultiMachineGanttChart(
                         )
                         val aLabel = textMeasurer.measure(
                             "t=${state.anomalyTime.toInt()}",
-                            TextStyle(
-                                color = Color.White,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            TextStyle(color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         )
-                        val boxW = aLabel.size.width + 10f;
+                        val boxW = aLabel.size.width + 10f
                         val boxH = aLabel.size.height + 6f
                         drawRoundRect(
                             Color(0xFFDC2626),
-                            topLeft = Offset(
-                                (anomalyX - boxW / 2f).coerceAtLeast(labelW),
-                                axisH - boxH
-                            ),
+                            topLeft = Offset((anomalyX - boxW / 2f).coerceAtLeast(labelW), axisH - boxH),
                             size = Size(boxW, boxH), cornerRadius = CornerRadius(3.dp.toPx())
                         )
                         drawText(
                             aLabel,
-                            topLeft = Offset(
-                                (anomalyX - boxW / 2f).coerceAtLeast(labelW) + 5f,
-                                axisH - boxH + 3f
-                            )
+                            topLeft = Offset((anomalyX - boxW / 2f).coerceAtLeast(labelW) + 5f, axisH - boxH + 3f)
                         )
                     }
 
@@ -228,15 +195,8 @@ fun MultiMachineGanttChart(
                     mMessages.forEachIndexed { idx, msg ->
                         val msgX = labelW + (msg.requestedTime * scale).toFloat()
                         drawMessageArrow(
-                            this,
-                            textMeasurer,
-                            msgX,
-                            msg1Y,
-                            msgZoneH,
-                            msg,
-                            arrowColor = Color(0xFF855316),
-                            bgColor = Color(0xFFFFDCBD),
-                            textColor = Color(0xFF683C00)
+                            this, textMeasurer, msgX, msg1Y, msgZoneH, msg,
+                            arrowColor = Color(0xFF855316), bgColor = Color(0xFFFFDCBD), textColor = Color(0xFF683C00)
                         )
                     }
 
@@ -245,15 +205,8 @@ fun MultiMachineGanttChart(
                     iMessages.forEachIndexed { idx, msg ->
                         val msgX = labelW + (msg.requestedTime * scale).toFloat()
                         drawMessageArrow(
-                            this,
-                            textMeasurer,
-                            msgX,
-                            msg2Y,
-                            msgZoneH,
-                            msg,
-                            arrowColor = Color(0xFF4B5A9C),
-                            bgColor = Color(0xFFDDE1FF),
-                            textColor = Color(0xFF001354)
+                            this, textMeasurer, msgX, msg2Y, msgZoneH, msg,
+                            arrowColor = Color(0xFF4B5A9C), bgColor = Color(0xFFDDE1FF), textColor = Color(0xFF001354)
                         )
                     }
                 }
@@ -271,10 +224,7 @@ fun MultiMachineGanttChart(
                     shape = RoundedCornerShape(6.dp),
                     enabled = canPrev
                 ) {
-                    Text(
-                        "< Previous Step",
-                        color = if (canPrev) OnSurfaceVariant else OutlineVariant
-                    )
+                    Text("< Previous Step", color = if (canPrev) OnSurfaceVariant else OutlineVariant)
                 }
                 val iterLabel = when (state.currentStep) {
                     4 -> "Iteration: 4 (Global Sync Complete)"
@@ -305,7 +255,7 @@ private fun drawMachineRow(
     scope: DrawScope, measurer: androidx.compose.ui.text.TextMeasurer,
     labelW: Float, laneY: Float, laneH: Float, chartW: Float, scale: Float,
     machineId: String, blocks: List<TaskBlock>, status: MachineStatus,
-    topColor: Color, bottomColor: Color, borderColor: Color,
+    topColor: Color, bottomColor: Color, borderColor: Color, textColor: Color,
     originalSchedule: List<TaskBlock> = emptyList()
 ) = with(scope) {
     // Row background
@@ -364,7 +314,7 @@ private fun drawMachineRow(
     originalSchedule.forEach { block ->
         val sx = labelW + (block.startTime * scale).toFloat()
         val bw = (block.duration * scale).toFloat().coerceAtLeast(2f)
-        val top = laneY + 12.dp.toPx();
+        val top = laneY + 12.dp.toPx()
         val bh = laneH - 24.dp.toPx()
         drawRoundRect(
             Color(0xFFE5E7EB), topLeft = Offset(sx, top), size = Size(bw, bh),
@@ -377,7 +327,7 @@ private fun drawMachineRow(
         )
     }
 
-    // 🌟 Actual blocks (Exact styling from your single-machine GanttChart) 🌟
+    // 🌟 Actual blocks (Exact flexible styling) 🌟
     blocks.forEach { block ->
         val startPx = labelW + (block.startTime * scale).toFloat()
         val widthPx = (block.duration * scale).toFloat().coerceAtLeast(2f)
@@ -385,25 +335,13 @@ private fun drawMachineRow(
         val blockHeight = laneH - 20.dp.toPx()
         val cornerRad = CornerRadius(4.dp.toPx())
 
-        val (tc, bc, bBorder, textCol) = when (block.type) {
-            TaskType.CBM -> listOf(
-                Color(0xFFFECDD3),
-                Color(0xFFFDA4AF),
-                Color(0xFFFB7185),
-                Color(0xFF881337)
-            )
-
-            TaskType.TBM -> listOf(
-                Color(0xFFF1F5F9),
-                Color(0xFFE2E8F0),
-                Color(0xFFCBD5E1),
-                Color(0xFF334155)
-            )
-
-            TaskType.PRODUCTION -> listOf(topColor, bottomColor, borderColor, Color(0xFF1E1B4B))
+        val (tc, bc, bBorder, tCol) = when (block.type) {
+            TaskType.CBM -> listOf(Color(0xFFFECDD3), Color(0xFFFDA4AF), Color(0xFFFB7185), Color(0xFF881337))
+            TaskType.TBM -> listOf(Color(0xFFF1F5F9), Color(0xFFE2E8F0), Color(0xFFCBD5E1), Color(0xFF334155))
+            TaskType.PRODUCTION -> listOf(topColor, bottomColor, borderColor, textColor)
         }
 
-        // A. Drop Shadow (Soft offset)
+        // A. Drop Shadow
         drawRoundRect(
             color = Color.Black.copy(alpha = 0.1f),
             topLeft = Offset(startPx, blockTop + 3.dp.toPx()),
@@ -413,11 +351,7 @@ private fun drawMachineRow(
 
         // B. Gradient Fill
         drawRoundRect(
-            brush = Brush.verticalGradient(
-                listOf(tc, bc),
-                startY = blockTop,
-                endY = blockTop + blockHeight
-            ),
+            brush = Brush.verticalGradient(listOf(tc, bc), startY = blockTop, endY = blockTop + blockHeight),
             topLeft = Offset(startPx, blockTop),
             size = Size(widthPx, blockHeight),
             cornerRadius = cornerRad
@@ -435,19 +369,19 @@ private fun drawMachineRow(
         // D. Centered Bold Text (With overlap prevention!)
         val textLayout = measurer.measure(
             text = block.id,
-            style = TextStyle(color = textCol, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            style = TextStyle(color = tCol, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         )
 
-        // رسم النص فقط إذا كان عرض المربع أكبر من عرض النص لعدم تداخله
-
-        drawText(
-            textLayoutResult = textLayout,
-            topLeft = Offset(
-                startPx + (widthPx - textLayout.size.width) / 2f,
-                blockTop + (blockHeight - textLayout.size.height) / 2f
+        // 🌟 منع تداخل النص خارج المربع (تمت إعادته) 🌟
+        if (widthPx > textLayout.size.width + 4f) {
+            drawText(
+                textLayoutResult = textLayout,
+                topLeft = Offset(
+                    startPx + (widthPx - textLayout.size.width) / 2f,
+                    blockTop + (blockHeight - textLayout.size.height) / 2f
+                )
             )
-        )
-
+        }
     }
 }
 
@@ -469,17 +403,16 @@ private fun drawMessageArrow(
     )
     // Arrowhead
     val path = Path().apply {
-        moveTo(x, botY); lineTo(x - tipSize, botY - tipSize); lineTo(
-        x + tipSize,
-        botY - tipSize
-    ); close()
+        moveTo(x, botY)
+        lineTo(x - tipSize, botY - tipSize)
+        lineTo(x + tipSize, botY - tipSize)
+        close()
     }
     drawPath(path, arrowColor)
 
     // Pill badge at midpoint
     val line1 = "${msg.type}: ${msg.jobId}"
-    val line2 =
-        "t${msg.originalTime.toInt()} → t${msg.requestedTime.toInt()} ${if (msg.accepted) "✓" else "✗"}"
+    val line2 = "t${msg.originalTime.toInt()} → t${msg.requestedTime.toInt()} ${if (msg.accepted) "✓" else "✗"}"
     val l1 = measurer.measure(
         line1,
         TextStyle(color = textColor, fontSize = 8.sp, fontWeight = FontWeight.Bold)
