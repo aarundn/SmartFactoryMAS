@@ -34,7 +34,9 @@ public:
 
         for (auto& block : schedule) {
             if (block.start.prob >= originalArrival) {
-                // 🌟 إضافة التأخير صراحةً لجميع المتغيرات 🌟
+                // 🌟 حماية: لا تقم بإزاحة مهام الصيانة أبداً 🌟
+                if (block.type == "TBM" || block.type == "CBM") continue;
+
                 block.start.min += delay; block.start.prob += delay; block.start.max += delay;
                 block.end.min   += delay; block.end.prob   += delay; block.end.max   += delay;
                 expectedArrivalTimes[block.id] = block.start.prob;
