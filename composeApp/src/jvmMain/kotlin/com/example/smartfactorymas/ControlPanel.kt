@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -14,125 +15,167 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
 fun ControlPanel(
-    strategy: String, onStrategyChange: (String) -> Unit,
-    w1: Float, onW1Change: (Float) -> Unit,
-    anomalyTime: Double, onAnomalyTimeChange: (Double) -> Unit,
-    schedulingStart: Double, onSchedulingStartChange: (Double) -> Unit,
-    rulMin: Double, onRulMinChange: (Double) -> Unit,
-    rulProb: Double, onRulProbChange: (Double) -> Unit,
-    rulMax: Double, onRulMaxChange: (Double) -> Unit,
-    jobs: List<JobInput>, onJobsChange: (List<JobInput>) -> Unit,
-    tbms: List<TbmInput>, onTbmsChange: (List<TbmInput>) -> Unit,
-    arhs: List<ArhUiState>, onArhsChange: (List<ArhUiState>) -> Unit,
+    strategy: String, onStrategyChange: (String) -> Unit, w1: Float, onW1Change: (Float) -> Unit,
+    anomalyTime: Double, onAnomalyTimeChange: (Double) -> Unit, schedulingStart: Double, onSchedulingStartChange: (Double) -> Unit,
+    rulMin: Double, onRulMinChange: (Double) -> Unit, rulProb: Double, onRulProbChange: (Double) -> Unit, rulMax: Double, onRulMaxChange: (Double) -> Unit,
+    jobs: List<JobInput>, onJobsChange: (List<JobInput>) -> Unit, tbms: List<TbmInput>, onTbmsChange: (List<TbmInput>) -> Unit, arhs: List<ArhUiState>, onArhsChange: (List<ArhUiState>) -> Unit,
     onSimulateClick: () -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().background(SurfaceContainerLowest, RoundedCornerShape(12.dp)).border(1.dp, OutlineVariant, RoundedCornerShape(12.dp)).padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
 
-        Text("Factory Command Center", color = OnSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-
-        Button(onClick = onSimulateClick, modifier = Modifier.fillMaxWidth().height(44.dp), colors = ButtonDefaults.buttonColors(containerColor = Primary)) {
-            Text("Run Simulation", fontWeight = FontWeight.Bold)
+        Row(modifier = Modifier.fillMaxWidth().border(1.dp, SurfaceVariant).padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Factory Command Center", color = OnSurface, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
         }
 
-        // Global Configuration
-        // Replace the strategy section inside SectionBox("Configuration & Strategy")
-        SectionBox("Configuration & Strategy") {
-
-            // Strategy selector — clicking auto-adjusts recommended weights
-            Row(Modifier.fillMaxWidth()) {
-                Segment("SOM (Maintenance)", strategy == "SOM", {
-                    onStrategyChange("SOM")
-                    onW1Change(0.75f)   // 👈 التعديل هنا: نضع 0.75 ليتطابق مع نتيجة المذكرة (31.25)
-                }, Modifier.weight(1f))
-
-                Segment("SOP (Production)", strategy == "SOP", {
-                    onStrategyChange("SOP")
-                    onW1Change(0.25f)   // 👈 التعديل هنا: نضع 0.25
-                }, Modifier.weight(1f))
+        // Anomaly Simulator
+        Column(modifier = Modifier.fillMaxWidth().background(SurfaceContainerLow, RoundedCornerShape(8.dp)).border(1.dp, OutlineVariant, RoundedCornerShape(8.dp)).padding(16.dp)) {
+            Text("ANOMALY SIMULATOR", color = OnSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(bottom = 12.dp))
+            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                SmallNumberField("Detection Time (t)", anomalyTime, Modifier.weight(1f)) { onAnomalyTimeChange(it) }
             }
-
-            // Strategy description + effective deadline
-            Spacer(Modifier.height(6.dp))
-            val (strategyDesc, deadlineColor) = if (strategy == "SOM")
-                "CBM must finish before risk zone (t=${rulMin.toInt()})" to Color(0xFF4F46E5)
-            else
-                "CBM allowed inside risk zone, before failure (t=${rulMax.toInt()})" to Color(0xFFEF4444)
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        if (strategy == "SOM") Color(0xFFE0E7FF) else Color(0xFFFFEDD5),
-                        RoundedCornerShape(4.dp)
-                    )
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            Button(
+                onClick = onSimulateClick, modifier = Modifier.fillMaxWidth().height(42.dp),
+                shape = RoundedCornerShape(6.dp), contentPadding = PaddingValues(0.dp)
             ) {
-                Text(strategyDesc, color = deadlineColor, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(PrimaryContainer, PrimaryFixed))), contentAlignment = Alignment.Center) {
+                    Text("Simulate Anomaly", color = OnPrimaryContainer, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
             }
+        }
 
-            Spacer(Modifier.height(8.dp))
-            SmallNumberField("Start Time", schedulingStart) { onSchedulingStartChange(it) }
+        // Strategy Selection
+        Column {
+            Text("STRATEGY SELECTION", color = OnSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(bottom = 8.dp))
+            Row(Modifier.fillMaxWidth().background(SurfaceContainerHighest, RoundedCornerShape(8.dp)).padding(4.dp)) {
+                Segment("Strategy SOM", strategy == "SOM", { onStrategyChange("SOM"); onW1Change(0.75f) }, Modifier.weight(1f))
+                Segment("Strategy SOP", strategy == "SOP", { onStrategyChange("SOP"); onW1Change(0.25f) }, Modifier.weight(1f))
+            }
+        }
 
-            // Weight sliders — still manually adjustable after auto-set
-            Spacer(Modifier.height(4.dp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("w1 (prod)", Modifier.width(65.dp), color = OnSurfaceVariant, fontSize = 10.sp)
+        // Weights & General Setting
+        Column {
+            Text("KPI WEIGHTS & TIMING", color = OnSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(bottom = 8.dp))
+            SmallNumberField("Scheduling Start Time", schedulingStart, Modifier.fillMaxWidth().padding(bottom = 12.dp)) { onSchedulingStartChange(it) }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("w1", color = OnSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(32.dp))
+
+                @OptIn(ExperimentalMaterial3Api::class)
                 Slider(
                     value = w1,
                     onValueChange = onW1Change,
                     modifier = Modifier.weight(1f),
-                    colors = SliderDefaults.colors(
-                        thumbColor = Primary, activeTrackColor = Primary,
-                        inactiveTrackColor = SurfaceContainerHigh
-                    )
+                    thumb = {
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .background(Primary, CircleShape)
+                        )
+                    },
+                    track = { sliderState ->
+                        // 🌟 Custom Track: شريط متصل تماماً بدون أي تعارض 🌟
+                        val fraction = sliderState.value
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .background(SurfaceVariant, RoundedCornerShape(3.dp))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(fraction)
+                                    .fillMaxHeight()
+                                    .background(Primary, RoundedCornerShape(3.dp))
+                            )
+                        }
+                    }
                 )
-                Text("%.2f".format(w1), color = OnSurface, fontSize = 10.sp,
-                    modifier = Modifier.width(32.dp).padding(start = 4.dp))
+
+                Text(
+                    text = "%.2f".format(w1),
+                    color = OnSurface,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.width(40.dp).padding(start = 8.dp)
+                )
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("w2 (maint)", Modifier.width(65.dp), color = OnSurfaceVariant, fontSize = 10.sp)
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("w2", color = OnSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(32.dp))
+
+                @OptIn(ExperimentalMaterial3Api::class)
                 Slider(
                     value = 1f - w1,
                     onValueChange = { onW1Change(1f - it) },
                     modifier = Modifier.weight(1f),
-                    colors = SliderDefaults.colors(
-                        thumbColor = Primary, activeTrackColor = Primary,
-                        inactiveTrackColor = SurfaceContainerHigh
-                    )
+                    thumb = {
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .background(Primary, CircleShape)
+                        )
+                    },
+                    track = { sliderState ->
+                        // 🌟 Custom Track لـ w2 🌟
+                        val fraction = sliderState.value
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .background(SurfaceVariant, RoundedCornerShape(3.dp))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(fraction)
+                                    .fillMaxHeight()
+                                    .background(Primary, RoundedCornerShape(3.dp))
+                            )
+                        }
+                    }
                 )
-                Text("%.2f".format(1f - w1), color = OnSurface, fontSize = 10.sp,
-                    modifier = Modifier.width(32.dp).padding(start = 4.dp))
+
+                Text(
+                    text = "%.2f".format(1f - w1),
+                    color = OnSurface,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.width(40.dp).padding(start = 8.dp)
+                )
             }
         }
 
-        // Anomaly Details
-        SectionBox("Anomaly & RUL Prediction") {
-            SmallNumberField("Alert Time (t)", anomalyTime) { onAnomalyTimeChange(it) }
-            SmallNumberField("RUL Min", rulMin) { onRulMinChange(it) }
-            SmallNumberField("RUL Probable", rulProb) { onRulProbChange(it) }
-            SmallNumberField("RUL Max", rulMax) { onRulMaxChange(it) }
+        // RUL Prediction
+        SectionBox("RUL Prediction") {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmallNumberField("RUL Min", rulMin, Modifier.weight(1f)) { onRulMinChange(it) }
+                SmallNumberField("Probable", rulProb, Modifier.weight(1f)) { onRulProbChange(it) }
+                SmallNumberField("RUL Max", rulMax, Modifier.weight(1f)) { onRulMaxChange(it) }
+            }
         }
 
         // Jobs
-        SectionBox("Production Jobs (Flexible)", onAdd = { onJobsChange(jobs + JobInput("P${jobs.size + 1}", 10.0, 50.0)) }) {
+        SectionBox("Production Jobs", onAdd = { onJobsChange(jobs + JobInput("P${jobs.size + 1}", 10.0, 50.0)) }) {
             jobs.forEachIndexed { i, job ->
-                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).background(SurfaceContainerLow, RoundedCornerShape(4.dp)).padding(8.dp)) {
+                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).background(SurfaceBright, RoundedCornerShape(6.dp)).border(1.dp, SurfaceVariant, RoundedCornerShape(6.dp)).padding(8.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        SmallStringField("Job Name", job.id, Modifier.weight(1f)) { onJobsChange(jobs.toMutableList().apply { this[i] = job.copy(id = it) }) }
-                        IconButton(onClick = { onJobsChange(jobs.filterIndexed { index, _ -> index != i }) }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Close, null, tint = Error)
+                        Text(job.id, color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        IconButton(onClick = { onJobsChange(jobs.filterIndexed { index, _ -> index != i }) }, modifier = Modifier.size(20.dp)) {
+                            Icon(Icons.Default.Close, null, tint = Error, modifier = Modifier.size(16.dp))
                         }
                     }
-                    Row(Modifier.fillMaxWidth()) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SmallStringField("Job ID", job.id, Modifier.weight(1f)) { onJobsChange(jobs.toMutableList().apply { this[i] = job.copy(id = it) }) }
                         SmallNumberField("Duration", job.duration, Modifier.weight(1f)) { onJobsChange(jobs.toMutableList().apply { this[i] = job.copy(duration = it) }) }
-                        Spacer(Modifier.width(8.dp))
                         SmallNumberField("Due Date", job.dueDate, Modifier.weight(1f)) { onJobsChange(jobs.toMutableList().apply { this[i] = job.copy(dueDate = it) }) }
                     }
                 }
@@ -140,18 +183,19 @@ fun ControlPanel(
         }
 
         // TBMs
-        SectionBox("TBM Activities (Fixed)", onAdd = { onTbmsChange(tbms + TbmInput("M${tbms.size + 1}", 50.0, 60.0)) }) {
+        SectionBox("TBM Activities", onAdd = { onTbmsChange(tbms + TbmInput("M${tbms.size + 1}", 50.0, 60.0)) }) {
             tbms.forEachIndexed { i, tbm ->
-                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).background(SurfaceContainerLow, RoundedCornerShape(4.dp)).padding(8.dp)) {
+                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).background(SurfaceBright, RoundedCornerShape(6.dp)).border(1.dp, SurfaceVariant, RoundedCornerShape(6.dp)).padding(8.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        SmallStringField("TBM Name", tbm.id, Modifier.weight(1f)) { onTbmsChange(tbms.toMutableList().apply { this[i] = tbm.copy(id = it) }) }
-                        IconButton(onClick = { onTbmsChange(tbms.filterIndexed { index, _ -> index != i }) }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Close, null, tint = Error)
+                        Text(tbm.id, color = OnSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        IconButton(onClick = { onTbmsChange(tbms.filterIndexed { index, _ -> index != i }) }, modifier = Modifier.size(20.dp)) {
+                            Icon(Icons.Default.Close, null, tint = Error, modifier = Modifier.size(16.dp))
                         }
                     }
-                    Row(Modifier.fillMaxWidth()) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SmallStringField("TBM ID", tbm.id, Modifier.weight(1f)) { onTbmsChange(tbms.toMutableList().apply { this[i] = tbm.copy(id = it) }) }
                         SmallNumberField("Start Time", tbm.start, Modifier.weight(1f)) { onTbmsChange(tbms.toMutableList().apply { this[i] = tbm.copy(start = it) }) }
-                        Spacer(Modifier.width(8.dp))
                         SmallNumberField("End Time", tbm.end, Modifier.weight(1f)) { onTbmsChange(tbms.toMutableList().apply { this[i] = tbm.copy(end = it) }) }
                     }
                 }
@@ -161,23 +205,23 @@ fun ControlPanel(
         // ARHs
         SectionBox("Technicians (ARH)", onAdd = { onArhsChange(arhs + ArhUiState("ARH_${arhs.size + 1}", 0.0, 100.0, 5.0, 5.0, 5.0)) }) {
             arhs.forEachIndexed { i, arh ->
-                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).background(SurfaceContainerLow, RoundedCornerShape(4.dp)).padding(8.dp)) {
+                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).background(SurfaceBright, RoundedCornerShape(6.dp)).border(1.dp, SurfaceVariant, RoundedCornerShape(6.dp)).padding(8.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        SmallStringField("Tech Name", arh.id, Modifier.weight(1f)) { onArhsChange(arhs.toMutableList().apply { this[i] = arh.copy(id = it) }) }
-                        IconButton(onClick = { onArhsChange(arhs.filterIndexed { index, _ -> index != i }) }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Close, null, tint = Error)
+                        Text(arh.id, color = Secondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        IconButton(onClick = { onArhsChange(arhs.filterIndexed { index, _ -> index != i }) }, modifier = Modifier.size(20.dp)) {
+                            Icon(Icons.Default.Close, null, tint = Error, modifier = Modifier.size(16.dp))
                         }
                     }
-                    Row(Modifier.fillMaxWidth()) {
+                    Spacer(Modifier.height(8.dp))
+                    SmallStringField("Tech ID", arh.id, Modifier.fillMaxWidth().padding(bottom = 8.dp)) { onArhsChange(arhs.toMutableList().apply { this[i] = arh.copy(id = it) }) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SmallNumberField("Avail Start", arh.availStart, Modifier.weight(1f)) { onArhsChange(arhs.toMutableList().apply { this[i] = arh.copy(availStart = it) }) }
-                        Spacer(Modifier.width(8.dp))
                         SmallNumberField("Avail End", arh.availEnd, Modifier.weight(1f)) { onArhsChange(arhs.toMutableList().apply { this[i] = arh.copy(availEnd = it) }) }
                     }
-                    Row(Modifier.fillMaxWidth()) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SmallNumberField("Min Dur", arh.durMin, Modifier.weight(1f)) { onArhsChange(arhs.toMutableList().apply { this[i] = arh.copy(durMin = it) }) }
-                        Spacer(Modifier.width(4.dp))
                         SmallNumberField("Expected", arh.durProb, Modifier.weight(1f)) { onArhsChange(arhs.toMutableList().apply { this[i] = arh.copy(durProb = it) }) }
-                        Spacer(Modifier.width(4.dp))
                         SmallNumberField("Max Dur", arh.durMax, Modifier.weight(1f)) { onArhsChange(arhs.toMutableList().apply { this[i] = arh.copy(durMax = it) }) }
                     }
                 }
@@ -188,23 +232,36 @@ fun ControlPanel(
 
 @Composable
 fun SectionBox(title: String, onAdd: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().background(SurfaceContainerHigh, RoundedCornerShape(8.dp)).border(1.dp, OutlineVariant, RoundedCornerShape(8.dp)).padding(12.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().background(SurfaceContainerLow, RoundedCornerShape(8.dp)).border(1.dp, OutlineVariant, RoundedCornerShape(8.dp)).padding(12.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(title, color = OnSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(title, color = OnSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             if (onAdd != null) IconButton(onClick = onAdd, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Add, null, tint = Primary) }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         content()
     }
 }
 
 @Composable
+private fun Segment(text: String, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.clip(RoundedCornerShape(6.dp)).background(if (isSelected) SurfaceContainerLowest else Color.Transparent).clickable(onClick = onClick).padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, color = if (isSelected) OnSurface else OnSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+// ============================================================================
+// 🌟 New Inputs (Label above the field)
+// ============================================================================
+
+@Composable
 private fun SmallNumberField(label: String, value: Double, modifier: Modifier = Modifier, onChange: (Double) -> Unit) {
-    // Local string state to allow smooth typing of decimals
     var textValue by remember(value) { mutableStateOf(if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()) }
 
-    Row(modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.width(65.dp), color = OnSurfaceVariant, fontSize = 10.sp, maxLines = 1)
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(text = label, color = OnSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
 
         BasicTextField(
             value = textValue,
@@ -212,11 +269,17 @@ private fun SmallNumberField(label: String, value: Double, modifier: Modifier = 
                 textValue = newText
                 newText.toDoubleOrNull()?.let { onChange(it) }
             },
-            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, color = OnSurface),
+            textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, color = OnSurface, fontFamily = FontFamily.Monospace),
             singleLine = true,
-            modifier = Modifier.fillMaxWidth().height(32.dp),
+            modifier = Modifier.fillMaxWidth().height(36.dp),
             decorationBox = { innerTextField ->
-                Box(modifier = Modifier.fillMaxSize().background(SurfaceBright, RoundedCornerShape(4.dp)).border(1.dp, OutlineVariant, RoundedCornerShape(4.dp)).padding(horizontal = 8.dp), contentAlignment = Alignment.CenterStart) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(SurfaceContainerLowest, RoundedCornerShape(6.dp)).border(1.dp, OutlineVariant, RoundedCornerShape(6.dp)).padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (textValue.isEmpty()) {
+                        Text("0", color = OutlineVariant, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                    }
                     innerTextField()
                 }
             }
@@ -226,30 +289,26 @@ private fun SmallNumberField(label: String, value: Double, modifier: Modifier = 
 
 @Composable
 private fun SmallStringField(label: String, value: String, modifier: Modifier = Modifier, onChange: (String) -> Unit) {
-    Row(modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.width(65.dp), color = OnSurfaceVariant, fontSize = 10.sp, maxLines = 1)
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(text = label, color = OnSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
 
         BasicTextField(
             value = value,
             onValueChange = onChange,
-            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, color = OnSurface),
+            textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, color = OnSurface, fontFamily = FontFamily.Monospace),
             singleLine = true,
-            modifier = Modifier.fillMaxWidth().height(32.dp),
+            modifier = Modifier.fillMaxWidth().height(36.dp),
             decorationBox = { innerTextField ->
-                Box(modifier = Modifier.fillMaxSize().background(SurfaceBright, RoundedCornerShape(4.dp)).border(1.dp, OutlineVariant, RoundedCornerShape(4.dp)).padding(horizontal = 8.dp), contentAlignment = Alignment.CenterStart) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(SurfaceContainerLowest, RoundedCornerShape(6.dp)).border(1.dp, OutlineVariant, RoundedCornerShape(6.dp)).padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (value.isEmpty()) {
+                        Text("...", color = OutlineVariant, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                    }
                     innerTextField()
                 }
             }
         )
-    }
-}
-
-@Composable
-private fun Segment(text: String, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.clip(RoundedCornerShape(6.dp)).background(if (isSelected) Primary else Color.Transparent).clickable(onClick = onClick).padding(vertical = 6.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text, color = if (isSelected) OnPrimary else OnSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
 }
