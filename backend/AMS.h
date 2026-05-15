@@ -95,22 +95,28 @@ private:
         double bestTardiness = std::numeric_limits<double>::max();
         std::vector<ScheduleBlock> bestSchedule;
         auto perm = jobs;
-        std::sort(perm.begin(), perm.end(),
-                [](const auto& a, const auto& b){ return a.id < b.id; });
 
-        do {
-            auto schedule = Scheduler::buildSchedule(
-                    schedulingStart, perm, prop.cbmStart, prop.cbmDuration, tbmBlocks);
-            double tardiness = 0;
-            for (const auto& b : schedule)
-                if (b.type == "PRODUCTION")
-                    tardiness += std::max(0.0, b.end.prob - b.dueDate);
-            if (tardiness < bestTardiness) {
-                bestTardiness = tardiness;
-                bestSchedule  = schedule;
-            }
-        } while (std::next_permutation(perm.begin(), perm.end(),
-                [](const auto& a, const auto& b){ return a.id < b.id; }));
+        // 🌟 المنطق الهجين الذكي (Smart Hybrid Logic) 🌟
+        if (jobs.size() <= 8) {
+            // 1. إذا كان عدد المهام صغيراً (8 فأقل): استخدم التباديل للحل المثالي 100% (الوظائف القديمة)
+            std::sort(perm.begin(), perm.end(), [](const auto& a, const auto& b){ return a.id < b.id; });
+            do {
+                auto schedule = Scheduler::buildSchedule(schedulingStart, perm, prop.cbmStart, prop.cbmDuration, tbmBlocks);
+                double tardiness = 0;
+                for (const auto& b : schedule) {
+                    if (b.type == "PRODUCTION") tardiness += std::max(0.0, b.end.prob - b.dueDate);
+                }
+                if (tardiness < bestTardiness) {
+                    bestTardiness = tardiness;
+                    bestSchedule  = schedule;
+                }
+            } while (std::next_permutation(perm.begin(), perm.end(), [](const auto& a, const auto& b){ return a.id < b.id; }));
+
+        } else {
+            // 2. إذا كان عدد المهام كبيراً (مثل Batch): استخدم EDD للسرعة الفائقة
+            std::sort(perm.begin(), perm.end(), [](const auto& a, const auto& b){ return a.dueDate < b.dueDate; });
+            bestSchedule = Scheduler::buildSchedule(schedulingStart, perm, prop.cbmStart, prop.cbmDuration, tbmBlocks);
+        }
 
         prop.schedule = bestSchedule;
         prop.tracks.push_back(bestSchedule);

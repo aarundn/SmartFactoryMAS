@@ -107,3 +107,50 @@ fun DashboardCard(
         androidx.compose.foundation.layout.Column(content = content)
     }
 }
+object AppColors {
+    val Background = Color(0xFFF7F9FB)
+    val Surface = Color(0xFFF7F9FB)
+    val SurfaceBright = Color(0xFFF7F9FB)
+    val SurfaceContainerLowest = Color(0xFFFFFFFF)
+    val SurfaceContainerLow = Color(0xFFF2F4F6)
+    val SurfaceContainer = Color(0xFFECEEF0)
+    val SurfaceContainerHigh = Color(0xFFE6E8EA)
+    val SurfaceContainerHighest = Color(0xFFE0E3E5)
+    val SurfaceVariant = Color(0xFFE0E3E5)
+
+    val Primary = Color(0xFF4B5A9C)
+    val OnPrimary = Color(0xFFFFFFFF)
+    val PrimaryContainer = Color(0xFFA5B4FC)
+    val OnPrimaryContainer = Color(0xFF354484)
+    val PrimaryFixed = Color(0xFFDDE1FF)
+    val PrimaryFixedDim = Color(0xFFB8C4FF)
+    val OnPrimaryFixed = Color(0xFF001354)
+
+    val Secondary = Color(0xFF855316)
+    val SecondaryContainer = Color(0xFFFFBC76)
+    val SecondaryFixed = Color(0xFFFFDCBD)
+    val SecondaryFixedDim = Color(0xFFFCB973)
+    val OnSecondaryContainer = Color(0xFF79490B)
+
+    val Tertiary = Color(0xFF8F4953)
+    val TertiaryContainer = Color(0xFFF79FAA)
+    val OnTertiaryContainer = Color(0xFF75333E)
+
+    val Error = Color(0xFFBA1A1A)
+    val ErrorContainer = Color(0xFFFFDAD6)
+    val OnErrorContainer = Color(0xFF93000A)
+
+    val OnSurface = Color(0xFF191C1E)
+    val OnSurfaceVariant = Color(0xFF454650)
+    val Outline = Color(0xFF767681)
+    val OutlineVariant = Color(0xFFC6C5D2)
+
+    // Chart-specific
+    val ChartStable = Color(0xFF85A88D)
+    val ChartImproved = Color(0xFFA5B4FC)
+    val ChartDeteriorated = Color(0xFFFCB973)
+    val ChartPurple = Color(0xFF818CF8)
+    val ChartYellow = Color(0xFFFBBF24)
+}
+
+

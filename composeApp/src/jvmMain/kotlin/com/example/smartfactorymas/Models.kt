@@ -3,6 +3,29 @@ package com.example.smartfactorymas
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+
+@Serializable
+data class BatchStability(
+    val stable: Double,
+    val improved: Double,
+    val deteriorated: Double
+)
+
+@Serializable
+data class BatchReactivity(
+    val jobs: Int,
+    @SerialName("single_ms") val singleMs: Double,
+    @SerialName("multi_ms") val multiMs: Double
+)
+
+@Serializable
+data class BatchResultEvent(
+    override val type: String = "batch_result",
+    val stability: BatchStability,
+    val recommendation: String,
+    val reactivity: List<BatchReactivity>,
+    @SerialName("csv_data") val csvData: String
+) : EngineEvent() // إذا كنت تستخدم sealed class للأحداث
 // ─── Engine events ─────────────────────────────────────────────────────────
 
 @Serializable

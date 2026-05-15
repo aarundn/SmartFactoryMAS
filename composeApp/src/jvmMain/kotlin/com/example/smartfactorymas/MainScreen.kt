@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.smartfactorymas.ui.MaintenanceSchedulerRoot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -57,7 +58,7 @@ fun MainScreen() {
     var ganttState       by remember { mutableStateOf(domain.buildInitialState(jobs, tbms, schedulingStart, rulMin, rulMax)) }
 
     // ─── Global-factory state ──────────────────────────────────────────────
-    var selectedTab by remember { mutableStateOf("local") }  // "local" | "global"
+    var selectedTab by remember { mutableStateOf("local") }  // "local" | "global" | "advanced_labs"
     var amaConfig   by remember { mutableStateOf(AmaUiConfig()) }
     var amvConfig   by remember { mutableStateOf(AmvUiConfig()) }
     var mmState     by remember { mutableStateOf(MultiMachineState()) }
@@ -98,25 +99,22 @@ fun MainScreen() {
         var lastEndTime = 0.0
 
         for (block in amvOriginalSchedule) {
-            // هل توجد رسالة تأخير لهذه المهمة تحديداً؟
             val delayMsg = allMessages.find { it.type == "I_MESSAGE" && it.jobId == block.id }
             var newStart = block.startTime
 
-            // تطبيق التأخير القادم من الرسالة
             if (delayMsg != null && delayMsg.requestedTime > newStart) {
                 newStart = delayMsg.requestedTime
             }
 
-            // منع التداخل: المهمة لا يمكن أن تبدأ قبل انتهاء المهمة التي تسبقها في AMV
             if (newStart < lastEndTime) {
                 newStart = lastEndTime
             }
 
-            val newDuration = block.duration // مدة المهمة تبقى ثابتة
+            val newDuration = block.duration
             val newEnd = newStart + newDuration
 
             amvShiftedSchedule.add(block.copy(startTime = newStart))
-            lastEndTime = newEnd // تحديث الوقت للمهمة القادمة
+            lastEndTime = newEnd
         }
 
         val baseMmState = mmState.copy(
@@ -139,7 +137,7 @@ fun MainScreen() {
             4 -> baseMmState.copy(
                 currentStep = step,
                 amsSchedule = amsGlobalSchedule,
-                amvSchedule = amvShiftedSchedule, // 🌟 الجدول المُزاح المترابط بدون تداخل
+                amvSchedule = amvShiftedSchedule,
                 messages = allMessages,
                 amsStatus = MachineStatus.DONE,
                 amaStatus = if (ganttState.multiMachineOutput?.upstreamConflict == true) MachineStatus.RESOLVED else MachineStatus.STEADY,
@@ -216,7 +214,6 @@ fun MainScreen() {
                 val historyJobs  = initSched.filter { it.startTime <= anomalyTime && it.type == TaskType.PRODUCTION }
                 val engStart     = if (historyJobs.isNotEmpty()) historyJobs.maxOf { it.endTime } else schedulingStart
 
-                // 🌟 تمرير الـ Input بأسماء المتغيرات الصحيحة لمنع أخطاء الترتيب 🌟
                 val input = EngineInput(
                     mode = "single",
                     strategy = strategy,
@@ -252,8 +249,6 @@ fun MainScreen() {
         }
     }
 
-    /** 🌟 Real Global Factory simulation (Calling C++) 🌟 */
-    /** 🌟 Real Global Factory simulation (Calling C++) 🌟 */
     fun runMultiMachineSimulation() {
         if (isMmRunning) return
         scope.launch {
@@ -265,13 +260,12 @@ fun MainScreen() {
             val historyJobs= initSched.filter { it.startTime <= anomalyTime && it.type == TaskType.PRODUCTION }
             val engStart   = if (historyJobs.isNotEmpty()) historyJobs.maxOf { it.endTime } else schedulingStart
 
-            // 🌟 2. قراءة القيود ديناميكياً من كل مهمة تم إدخالها في AMA و AMV 🌟
             val jobLinks = amaConfig.blocks.map {
-                JobLinkInput(jobId = it.jobId, readyTime = it.end) // $c_{(i-1)k}$
+                JobLinkInput(jobId = it.jobId, readyTime = it.end)
             }
 
             val amvJobLinks = amvConfig.blocks.map {
-                AmvJobLinkInput(jobId = it.jobId, expectedStartOnNext = it.start) // $t_{(i+1)k}$
+                AmvJobLinkInput(jobId = it.jobId, expectedStartOnNext = it.start)
             }
 
             val input = EngineInput(
@@ -330,143 +324,152 @@ fun MainScreen() {
         Column(modifier = Modifier.fillMaxSize().weight(1f)) {
             TopHeader(selectedTab) { selectedTab = it }
 
-            if (selectedTab == "local") {
-                // ── LOCAL AMS VIEW ─────────────
-                Row(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            // 🌟 استخدام when بدلاً من if/else للتنقل بين الشاشات 🌟
+            when (selectedTab) {
+                "local" -> {
+                    // ── LOCAL AMS VIEW ─────────────
+                    Row(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
 
-                    Column(modifier = Modifier.width(leftCurrentWidth).fillMaxHeight()) {
-                        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                            horizontalArrangement = if (leftExpanded) Arrangement.End else Arrangement.Center) {
-                            IconButton(onClick = { leftExpanded = !leftExpanded }, modifier = Modifier.size(36.dp)) {
-                                Icon(if (leftExpanded) Icons.Default.KeyboardDoubleArrowLeft else Icons.Default.KeyboardDoubleArrowRight, "")
+                        Column(modifier = Modifier.width(leftCurrentWidth).fillMaxHeight()) {
+                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                horizontalArrangement = if (leftExpanded) Arrangement.End else Arrangement.Center) {
+                                IconButton(onClick = { leftExpanded = !leftExpanded }, modifier = Modifier.size(36.dp)) {
+                                    Icon(if (leftExpanded) Icons.Default.KeyboardDoubleArrowLeft else Icons.Default.KeyboardDoubleArrowRight, "")
+                                }
                             }
-                        }
-                        if (leftExpanded) {
-                            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                                ControlPanel(
-                                    strategy, { strategy = it }, w1, { w1 = it },
-                                    anomalyTime, { anomalyTime = it }, schedulingStart, { schedulingStart = it },
-                                    rulMin, { rulMin = it }, rulProb, { rulProb = it }, rulMax, { rulMax = it },
-                                    jobs, { jobs = it; ganttState = ganttState.copy(masOutput = null) },
-                                    tbms, { tbms = it; ganttState = ganttState.copy(masOutput = null) },
-                                    arhs, { arhs = it }, ::runLocalSimulation)
-                            }
-                        }
-                    }
-
-                    if (leftExpanded) Box(modifier = Modifier.fillMaxHeight().width(4.dp)
-                        .background(OutlineVariant.copy(0.5f))
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures { ch, dx -> ch.consume()
-                                leftBaseWidth = (leftBaseWidth + with(density) { dx.toDp() }).coerceIn(250.dp, 600.dp) }
-                        })
-
-                    Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        ganttState.masOutput?.let { out ->
-                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                out.proposals.forEachIndexed { idx, prop ->
-                                    val isChosen = prop.arhId == out.chosenArh
-                                    FilterChip(selected = idx == selectedProposal,
-                                        onClick = { selectedProposal = idx; applyStepState(ganttState.currentStep, idx) },
-                                        label = { Text("${prop.arhId}${if (isChosen) " ★" else ""}", fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium) },
-                                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = PrimaryContainer, selectedLabelColor = OnPrimaryContainer))
+                            if (leftExpanded) {
+                                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                    ControlPanel(
+                                        strategy, { strategy = it }, w1, { w1 = it },
+                                        anomalyTime, { anomalyTime = it }, schedulingStart, { schedulingStart = it },
+                                        rulMin, { rulMin = it }, rulProb, { rulProb = it }, rulMax, { rulMax = it },
+                                        jobs, { jobs = it; ganttState = ganttState.copy(masOutput = null) },
+                                        tbms, { tbms = it; ganttState = ganttState.copy(masOutput = null) },
+                                        arhs, { arhs = it }, ::runLocalSimulation)
                                 }
                             }
                         }
-                        GanttChart(state = ganttState, anomalyTime = anomalyTime,
-                            onPreviousStep = { if (ganttState.currentStep > 0) applyStepState(ganttState.currentStep - 1) },
-                            onNextStep     = { if (ganttState.currentStep < 4) applyStepState(ganttState.currentStep + 1) },
-                            isAutoRunning  = isAutoRunning, modifier = Modifier.fillMaxSize())
-                    }
 
-                    if (rightExpanded) Box(modifier = Modifier.fillMaxHeight().width(4.dp)
-                        .background(OutlineVariant.copy(0.5f))
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures { ch, dx -> ch.consume()
-                                rightBaseWidth = (rightBaseWidth - with(density) { dx.toDp() }).coerceIn(250.dp, 600.dp) }
-                        })
+                        if (leftExpanded) Box(modifier = Modifier.fillMaxHeight().width(4.dp)
+                            .background(OutlineVariant.copy(0.5f))
+                            .pointerInput(Unit) {
+                                detectHorizontalDragGestures { ch, dx -> ch.consume()
+                                    leftBaseWidth = (leftBaseWidth + with(density) { dx.toDp() }).coerceIn(250.dp, 600.dp) }
+                            })
 
-                    Column(modifier = Modifier.width(rightCurrentWidth).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (rightExpanded) Arrangement.Start else Arrangement.Center) {
-                            IconButton(onClick = { rightExpanded = !rightExpanded }, modifier = Modifier.size(36.dp)) {
-                                Icon(if (rightExpanded) Icons.Default.KeyboardDoubleArrowRight else Icons.Default.KeyboardDoubleArrowLeft, "")
+                        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                            ganttState.masOutput?.let { out ->
+                                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    out.proposals.forEachIndexed { idx, prop ->
+                                        val isChosen = prop.arhId == out.chosenArh
+                                        FilterChip(selected = idx == selectedProposal,
+                                            onClick = { selectedProposal = idx; applyStepState(ganttState.currentStep, idx) },
+                                            label = { Text("${prop.arhId}${if (isChosen) " ★" else ""}", fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium) },
+                                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = PrimaryContainer, selectedLabelColor = OnPrimaryContainer))
+                                    }
+                                }
+                            }
+                            GanttChart(state = ganttState, anomalyTime = anomalyTime,
+                                onPreviousStep = { if (ganttState.currentStep > 0) applyStepState(ganttState.currentStep - 1) },
+                                onNextStep     = { if (ganttState.currentStep < 4) applyStepState(ganttState.currentStep + 1) },
+                                isAutoRunning  = isAutoRunning, modifier = Modifier.fillMaxSize())
+                        }
+
+                        if (rightExpanded) Box(modifier = Modifier.fillMaxHeight().width(4.dp)
+                            .background(OutlineVariant.copy(0.5f))
+                            .pointerInput(Unit) {
+                                detectHorizontalDragGestures { ch, dx -> ch.consume()
+                                    rightBaseWidth = (rightBaseWidth - with(density) { dx.toDp() }).coerceIn(250.dp, 600.dp) }
+                            })
+
+                        Column(modifier = Modifier.width(rightCurrentWidth).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (rightExpanded) Arrangement.Start else Arrangement.Center) {
+                                IconButton(onClick = { rightExpanded = !rightExpanded }, modifier = Modifier.size(36.dp)) {
+                                    Icon(if (rightExpanded) Icons.Default.KeyboardDoubleArrowRight else Icons.Default.KeyboardDoubleArrowLeft, "")
+                                }
+                            }
+                            if (rightExpanded) {
+                                MetricsDashboard(ganttState.f1.toFloat(), ganttState.f2.toFloat(), ganttState.f.toFloat(), ganttState.chosenArh, Modifier.fillMaxWidth())
+                                CommunicationLog(ganttState.logs, Modifier.weight(1f).fillMaxWidth())
                             }
                         }
-                        if (rightExpanded) {
-                            MetricsDashboard(ganttState.f1, ganttState.f2, ganttState.f, ganttState.chosenArh, Modifier.fillMaxWidth())
-                            CommunicationLog(ganttState.logs, Modifier.weight(1f).fillMaxWidth())
+                    }
+                } // End of local view
+
+                "global" -> {
+                    // ── GLOBAL FACTORY VIEW ────────────────────────────────
+                    Row(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+
+                        // Left: multi-machine control panel
+                        Column(modifier = Modifier.width(leftCurrentWidth).fillMaxHeight()) {
+                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                horizontalArrangement = if (leftExpanded) Arrangement.End else Arrangement.Center) {
+                                IconButton(onClick = { leftExpanded = !leftExpanded }, modifier = Modifier.size(36.dp)) {
+                                    Icon(if (leftExpanded) Icons.Default.KeyboardDoubleArrowLeft else Icons.Default.KeyboardDoubleArrowRight, "")
+                                }
+                            }
+                            if (leftExpanded) {
+                                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                    MultiMachineControlPanel(
+                                        mmState       = mmState,
+                                        amaConfig     = amaConfig,
+                                        amvConfig     = amvConfig,
+                                        isRunning     = isMmRunning,
+                                        hasLocalResult = true,
+                                        onMmStateChange = { mmState = it },
+                                        onAmaChange   = { amaConfig = it },
+                                        onAmvChange   = { amvConfig = it },
+                                        onSimulate    = ::runMultiMachineSimulation
+                                    )
+                                }
+                            }
+                        }
+
+                        if (leftExpanded) Box(modifier = Modifier.fillMaxHeight().width(4.dp)
+                            .background(OutlineVariant.copy(0.5f))
+                            .pointerInput(Unit) {
+                                detectHorizontalDragGestures { ch, dx -> ch.consume()
+                                    leftBaseWidth = (leftBaseWidth + with(density) { dx.toDp() }).coerceIn(250.dp, 600.dp) }
+                            })
+
+                        // Center: 3-lane Gantt
+                        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                            MultiMachineGanttChart(
+                                state      = mmState,
+                                onPrevStep = { if (mmState.currentStep > 0) applyMultiMachineStep(mmState.currentStep - 1) },
+                                onNextStep = { if (mmState.currentStep < 4 && !isMmRunning) applyMultiMachineStep(mmState.currentStep + 1) },
+                                isRunning  = isMmRunning,
+                                modifier   = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        if (rightExpanded) Box(modifier = Modifier.fillMaxHeight().width(4.dp)
+                            .background(OutlineVariant.copy(0.5f))
+                            .pointerInput(Unit) {
+                                detectHorizontalDragGestures { ch, dx -> ch.consume()
+                                    rightBaseWidth = (rightBaseWidth - with(density) { dx.toDp() }).coerceIn(250.dp, 600.dp) }
+                            })
+
+                        // Right: Communication log
+                        Column(modifier = Modifier.width(rightCurrentWidth).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (rightExpanded) Arrangement.Start else Arrangement.Center) {
+                                IconButton(onClick = { rightExpanded = !rightExpanded }, modifier = Modifier.size(36.dp)) {
+                                    Icon(if (rightExpanded) Icons.Default.KeyboardDoubleArrowRight else Icons.Default.KeyboardDoubleArrowLeft, "")
+                                }
+                            }
+                            if (rightExpanded) {
+                                SystemStatusCard(mmState, Modifier.fillMaxWidth())
+                                CommunicationLog(mmState.logs, Modifier.weight(1f).fillMaxWidth())
+                            }
                         }
                     }
+                } // End of global view
+
+                "advanced_labs" -> {
+                    // ── ADVANCED LABS VIEW ────────────────────────────────
+                    MaintenanceSchedulerRoot()
                 }
-
-            } else {
-                // ── GLOBAL FACTORY VIEW ────────────────────────────────
-                Row(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-
-                    // Left: multi-machine control panel
-                    Column(modifier = Modifier.width(leftCurrentWidth).fillMaxHeight()) {
-                        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                            horizontalArrangement = if (leftExpanded) Arrangement.End else Arrangement.Center) {
-                            IconButton(onClick = { leftExpanded = !leftExpanded }, modifier = Modifier.size(36.dp)) {
-                                Icon(if (leftExpanded) Icons.Default.KeyboardDoubleArrowLeft else Icons.Default.KeyboardDoubleArrowRight, "")
-                            }
-                        }
-                        if (leftExpanded) {
-                            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                                MultiMachineControlPanel(
-                                    mmState       = mmState,
-                                    amaConfig     = amaConfig,
-                                    amvConfig     = amvConfig,
-                                    isRunning     = isMmRunning,
-                                    hasLocalResult = true,
-                                    onMmStateChange = { mmState = it },
-                                    onAmaChange   = { amaConfig = it },
-                                    onAmvChange   = { amvConfig = it },
-                                    onSimulate    = ::runMultiMachineSimulation
-                                )
-                            }
-                        }
-                    }
-
-                    if (leftExpanded) Box(modifier = Modifier.fillMaxHeight().width(4.dp)
-                        .background(OutlineVariant.copy(0.5f))
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures { ch, dx -> ch.consume()
-                                leftBaseWidth = (leftBaseWidth + with(density) { dx.toDp() }).coerceIn(250.dp, 600.dp) }
-                        })
-
-                    // Center: 3-lane Gantt
-                    Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        MultiMachineGanttChart(
-                            state      = mmState,
-                            onPrevStep = { if (mmState.currentStep > 0) applyMultiMachineStep(mmState.currentStep - 1) },
-                            onNextStep = { if (mmState.currentStep < 4 && !isMmRunning) applyMultiMachineStep(mmState.currentStep + 1) },
-                            isRunning  = isMmRunning,
-                            modifier   = Modifier.fillMaxSize()
-                        )
-                    }
-
-                    if (rightExpanded) Box(modifier = Modifier.fillMaxHeight().width(4.dp)
-                        .background(OutlineVariant.copy(0.5f))
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures { ch, dx -> ch.consume()
-                                rightBaseWidth = (rightBaseWidth - with(density) { dx.toDp() }).coerceIn(250.dp, 600.dp) }
-                        })
-
-                    // Right: Communication log
-                    Column(modifier = Modifier.width(rightCurrentWidth).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (rightExpanded) Arrangement.Start else Arrangement.Center) {
-                            IconButton(onClick = { rightExpanded = !rightExpanded }, modifier = Modifier.size(36.dp)) {
-                                Icon(if (rightExpanded) Icons.Default.KeyboardDoubleArrowRight else Icons.Default.KeyboardDoubleArrowLeft, "")
-                            }
-                        }
-                        if (rightExpanded) {
-                            SystemStatusCard(mmState, Modifier.fillMaxWidth())
-                            CommunicationLog(mmState.logs, Modifier.weight(1f).fillMaxWidth())
-                        }
-                    }
-                }
-            }
+            } // End of when
         }
     }
 }
@@ -479,11 +482,10 @@ fun Sidebar(selectedTab: String, onTabSelect: (String) -> Unit) {
             .background(SurfaceContainerLow).border(1.dp, OutlineVariant)
             .padding(vertical = 24.dp)
     ) {
-        SidebarItem("", Icons.Default.Dashboard,              selectedTab == "local",  { onTabSelect("local") })
-        SidebarItem("", Icons.Default.AccountTree,            selectedTab == "global", { onTabSelect("global") })
-        SidebarItem("", Icons.Default.Engineering,            false, {})
-        SidebarItem("", Icons.Default.PrecisionManufacturing, false, {})
-        SidebarItem("", Icons.Default.Settings,               false, {})
+        SidebarItem("Local", Icons.Default.Dashboard, selectedTab == "local") { onTabSelect("local") }
+        SidebarItem("Global", Icons.Default.AccountTree, selectedTab == "global") { onTabSelect("global") }
+        SidebarItem("Labs", Icons.Default.Science, selectedTab == "advanced_labs") { onTabSelect("advanced_labs") }
+        SidebarItem("Settings", Icons.Default.Settings, false) {}
     }
 }
 
@@ -522,6 +524,7 @@ fun TopHeader(selectedTab: String, onTabChange: (String) -> Unit) {
         ) {
             HeaderTab("Local (AMS)",      selectedTab == "local")  { onTabChange("local") }
             HeaderTab("Global Factory",   selectedTab == "global") { onTabChange("global") }
+            HeaderTab("Advanced Labs",    selectedTab == "advanced_labs") { onTabChange("advanced_labs") }
         }
     }
 }

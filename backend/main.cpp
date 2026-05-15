@@ -11,7 +11,8 @@
 #include "AMV.h"
 #include "AMS.h"
 #include "JsonLogger.h"
-#include "BatchSimulator.h" // 🌟 أضفنا ملف المختبر هنا 🌟
+#include "BatchSimulator.h"
+#include "BenchmarkRunner.h" // 🌟 أضفنا ملف المختبر هنا 🌟
 
 // ── JSON helpers ─────────────────────────────────────────────────────────────
 static double getNum(const std::string& json, const std::string& key) {
@@ -104,7 +105,34 @@ int main() {
 
     std::string mode = getStr(input, "mode");
     if (mode.empty()) mode = "single";
+    if (mode == "benchmark") {
+        std::string outputDir = getStr(input, "output_dir");
+        if (outputDir.empty()) outputDir = "./benchmark_results/";
 
+        jsonLog("SYS", "Starting Phase 5 Benchmark Suite...");
+
+        try {
+            BenchmarkRunner::runCompleteBenchmark(outputDir);
+
+            // Return success JSON
+            std::cout << "{\"type\":\"benchmark_complete\","
+                      << "\"status\":\"success\","
+                      << "\"output_dir\":\"" << outputDir << "\","
+                      << "\"files\":["
+                      << "\"raw_results.csv\","
+                      << "\"aggregated_results.csv\","
+                      << "\"latex_tables.tex\","
+                      << "\"analysis_report.txt\""
+                      << "]}" << std::endl;
+
+            return 0;
+        }
+        catch (const std::exception& e) {
+            std::cout << "{\"type\":\"benchmark_error\","
+                      << "\"error\":\"" << e.what() << "\"}" << std::endl;
+            return 1;
+        }
+    }
     // 🌟 🌟 🌟 الإضافة الجديدة: وضع الاختبار المجمع (Batch Mode) 🌟 🌟 🌟
     if (mode == "batch") {
         BatchParams params;
