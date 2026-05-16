@@ -70,27 +70,15 @@ public:
                 if (comp == skill) { hasCompetence = true; break; }
 
             if (!hasCompetence) {
-                jsonLog("ASRH",
-                        "SKIPPED " + arh.id + ": missing skill '" + skill + "'.",
-                        "warn", 3);
+                jsonLog("ASRH", "SKIPPED " + arh.id + ": missing skill '" + skill + "'.", "warn", 3);
                 continue;
             }
             qualifiedARHs.push_back(arh);
         }
 
-        jsonLog("ASRH",
-                "Found " + std::to_string(qualifiedARHs.size())
-                        + " competent technician(s). Sending CFP...", "info", 4);
+        jsonLog("ASRH", "Found " + std::to_string(qualifiedARHs.size()) + " competent technician(s). Sending CFP...", "info", 4);
 
         // ── STEPS 4 & 5: CFP + Reception with all 5 constraints ─────────────
-        //
-        //  C1. cbmStart >= alertTime       (anomaly must exist first)
-        //  C2. cbmStart >= schedulingStart (cannot interrupt running job)
-        //  C3. cbmStart clears all TBMs    (no overlap with fixed maintenance)
-        //  C4. cbmFinish <= window.end     (must complete within ARH shift)
-        //  C5a. cbmStart < RUL.max         (machine not yet failed)
-        //  C5b. cbmFinish <= deadlineLimit (within strategy-defined window)
-        //
         std::vector<CBMProposal> proposals;
         std::string respondingARHs;
 
@@ -100,92 +88,57 @@ public:
                 // C1 + C2: earliest the ARH can physically start
                 double rawStart = std::max({ window.start, alertTime, schedulingStart });
 
-                // Quick pre-check: shift already expired before we can even begin
                 if (rawStart >= window.end) {
-                    jsonLog("ASRH",
-                            "SKIPPED " + arh.id
-                                    + ": shift ends t=" + std::to_string((int)window.end)
-                                    + " but earliest start is t=" + std::to_string((int)rawStart)
-                                    + " (shift expired).",
-                            "warn", 5);
-                    continue;
+                    continue; // Shift expired
                 }
 
-                // C3: push past any overlapping TBM block
-                double adjustedStart = resolveStart(rawStart, arh.repairDuration, tbmBlocks);
+                // Calculate the "Early" option
+                double earlyStart = resolveStart(rawStart, arh.repairDuration, tbmBlocks);
+                double earlyFinish = earlyStart + arh.repairDuration.prob;
 
-                if (adjustedStart != rawStart) {
-                    jsonLog("ASRH",
-                            arh.id + ": cbmStart pushed t="
-                                    + std::to_string((int)rawStart)
-                                    + " → t=" + std::to_string((int)adjustedStart)
-                                    + " (TBM conflict resolved).",
-                            "info", 5);
+                // C4 & C5 Constraints
+                if (earlyFinish > window.end || earlyStart >= diag.estimatedRUL.max || earlyFinish > deadlineLimit) {
+                    continue; // Invalid
                 }
 
-                double adjustedFinish = adjustedStart + arh.repairDuration.prob;
+                // 🌟 SOP FIX: Calculate the "Late" option 🌟
+                double lateStart = std::min(window.end, deadlineLimit) - arh.repairDuration.prob;
+                bool lateIsSafe = true;
 
-                // C4: must complete within ARH's own shift
-                if (adjustedFinish > window.end) {
-                    jsonLog("ASRH",
-                            "REJECTED " + arh.id
-                                    + ": finish t=" + std::to_string((int)adjustedFinish)
-                                    + " exceeds shift end t=" + std::to_string((int)window.end)
-                                    + " (cannot complete within shift).",
-                            "warn", 5);
-                    continue;
+                // Ensure late start doesn't collide with a TBM block
+                for (const auto& tbm : tbmBlocks) {
+                    if (lateStart < tbm.end && (lateStart + arh.repairDuration.prob) > tbm.start) {
+                        lateIsSafe = false;
+                        break;
+                    }
                 }
 
-                // C5a: machine must not have already failed
-                if (adjustedStart >= diag.estimatedRUL.max) {
-                    jsonLog("ASRH",
-                            "REJECTED " + arh.id
-                                    + ": cbmStart t=" + std::to_string((int)adjustedStart)
-                                    + " is AFTER machine failure (RUL.max="
-                                    + std::to_string((int)diag.estimatedRUL.max) + ").",
-                            "error", 5);
-                    continue;
-                }
-
-                // C5b: must finish within the strategy deadline
-                if (adjustedFinish > deadlineLimit) {
-                    jsonLog("ASRH",
-                            "REJECTED " + arh.id
-                                    + ": finish t=" + std::to_string((int)adjustedFinish)
-                                    + " exceeds " + strategy + " deadline t="
-                                    + std::to_string((int)deadlineLimit) + ".",
-                            "warn", 5);
-                    continue;
-                }
-
-                // All constraints satisfied — accept proposal
                 CBMProposal prop;
                 prop.arhId       = arh.id;
-                prop.cbmStart    = adjustedStart;
                 prop.cbmDuration = arh.repairDuration;
+
+                // 🌟 THE STRATEGY FILTER 🌟
+                if (strategy == "SOP" && lateIsSafe && (lateStart >= earlyStart + 1.0)) {
+                    // SOP selected: Push maintenance to the last safe minute
+                    prop.cbmStart = lateStart;
+                    jsonLog("ASRH", "SOP Strategy: Selected late start (t=" + std::to_string((int)lateStart) + ") for " + arh.id, "info");
+                } else {
+                    // SOM selected (Or SOP fallback if late is unsafe): Fix it ASAP
+                    prop.cbmStart = earlyStart;
+                    jsonLog("ASRH", strategy + " Strategy: Selected early start (t=" + std::to_string((int)earlyStart) + ") for " + arh.id, "info");
+                }
+
                 proposals.push_back(prop);
                 if (!respondingARHs.empty()) respondingARHs += " and ";
                 respondingARHs += arh.id;
-
-                jsonLog("ASRH",
-                        "ACCEPTED " + arh.id
-                                + ": CBM at t=" + std::to_string((int)adjustedStart)
-                                + ", finish t=" + std::to_string((int)adjustedFinish)
-                                + " (deadline t=" + std::to_string((int)deadlineLimit) + ").",
-                        "info", 5);
             }
         }
 
         // ── STEP 6: Forward to AMS ───────────────────────────────────────────
         if (respondingARHs.empty())
-            jsonLog("ASRH",
-                    "No valid proposals within " + strategy
-                            + " deadline (t=" + std::to_string((int)deadlineLimit) + ").",
-                    "error", 6);
+            jsonLog("ASRH", "No valid proposals within " + strategy + " deadline (t=" + std::to_string((int)deadlineLimit) + ").", "error", 6);
         else
-            jsonLog("ASRH",
-                    "Forwarding proposals from " + respondingARHs + " to AMS.",
-                    "info", 6);
+            jsonLog("ASRH", "Forwarding proposals from " + respondingARHs + " to AMS.", "info", 6);
 
         return proposals;
     }

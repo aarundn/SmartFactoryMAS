@@ -38,47 +38,72 @@ public:
             const std::vector<TBMBlock>& tbmBlocks,
             std::string strategy,
             double rulMin, double rulProb, double rulMax,
-            std::string mode = "single")   // "single" or "multi" from UI
+            std::string mode = "single")
     {
-        // ── PHASE 1: Single-machine (always runs) ────────────────────────────
         jsonLog("AMS", "=== Phase 1: Single-Machine Scheduling ===");
-        jsonLog("AMS", "Anomaly at t=" + std::to_string((int)alertTime)
-                + " | Mode: " + mode);
+        jsonLog("AMS", "Anomaly at t=" + std::to_string((int)alertTime) + " | Mode: " + mode);
 
         DiagnosticResult diag = amc->analyzeAnomaly(alertTime, rulMin, rulProb, rulMax);
-        auto proposals = asrh->callForProposals(
-                diag, strategy, alertTime, schedulingStart, tbmBlocks);
 
-        if (proposals.empty()) {
+        // 1. Get ALL raw physical options from ASRH
+        auto allProposals = asrh->callForProposals(diag, strategy, alertTime, schedulingStart, tbmBlocks);
+
+        if (allProposals.empty()) {
             jsonLog("AMS", "ERROR: No valid proposals. System Abort.", "error");
             emitResultJson({}, "NONE");
             return {};
         }
 
-        CBMProposal* best = nullptr;
-        for (auto& prop : proposals) {
+        // 2. Evaluate every single option (Calculates f1 and f2)
+        for (auto& prop : allProposals) {
             evaluate(prop, schedulingStart, jobs, tbmBlocks);
-            if (!best || prop.f.prob < best->f.prob) best = &prop;
         }
 
-        jsonLog("AMS", "SELECTED: " + best->arhId + " | f=" + best->f.str());
-        asrh->confirm(best->arhId);
-        emitResultJson(proposals, best->arhId);
+        // 🌟 3. THE SMART FILTER: Group by Technician and keep only the best one 🌟
+        std::map<std::string, CBMProposal> bestPerARH;
+        for (const auto& prop : allProposals) {
+            if (bestPerARH.find(prop.arhId) == bestPerARH.end()) {
+                bestPerARH[prop.arhId] = prop; // First time seeing this technician
+            } else {
+                // If we already have a proposal for this tech, keep the one with the better (lower) f score!
+                if (prop.f.prob < bestPerARH[prop.arhId].f.prob) {
+                    bestPerARH[prop.arhId] = prop;
+                }
+            }
+        }
 
-        // ── PHASE 2: Multi-machine (only if UI tab = "multi") ────────────────
+        // 4. Extract the final unique list for the UI
+        std::vector<CBMProposal> finalProposals;
+        CBMProposal* bestOverall = nullptr;
+
+        for (auto& pair : bestPerARH) {
+            finalProposals.push_back(pair.second);
+        }
+
+        // 5. Find the absolute best one across all technicians
+        for (auto& prop : finalProposals) {
+            if (!bestOverall || prop.f.prob < bestOverall->f.prob) {
+                bestOverall = &prop;
+            }
+        }
+
+        jsonLog("AMS", "SELECTED: " + bestOverall->arhId + " | f=" + bestOverall->f.str());
+        asrh->confirm(bestOverall->arhId);
+
+        // 6. Send exactly ONE clean proposal per ARH to the Kotlin UI!
+        emitResultJson(finalProposals, bestOverall->arhId);
+
         if (mode == "multi") {
             if (ama != nullptr && amv != nullptr) {
                 jsonLog("AMS", "=== Phase 2: Multi-Machine Negotiation ===");
                 MultiMachineCoordinator coordinator;
-                coordinator.negotiate(best->schedule, *ama, *amv);
+                coordinator.negotiate(bestOverall->schedule, *ama, *amv);
             } else {
-                jsonLog("AMS",
-                        "Multi-machine mode requested but no neighbors configured. "
-                        "Add AMA and AMV in the UI.", "warn");
+                jsonLog("AMS", "Multi-machine mode requested but no neighbors configured.", "warn");
             }
         }
 
-        return proposals;
+        return finalProposals;
     }
 
 private:
