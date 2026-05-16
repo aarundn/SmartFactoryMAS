@@ -12,14 +12,27 @@
 #include "AMS.h"
 #include "JsonLogger.h"
 #include "BatchSimulator.h"
-#include "BenchmarkRunner.h" // 🌟 أضفنا ملف المختبر هنا 🌟
+#include "BenchmarkRunner.h"
 
-// ── JSON helpers ─────────────────────────────────────────────────────────────
+
+static std::string fMs(double v) {
+    if(v <= 0.01) return "\"--\"";
+    char buf[32]; snprintf(buf, sizeof(buf), "\"%.2f\"", v);
+    return std::string(buf);
+}
+static std::string fPct(double v) {
+    char buf[32]; snprintf(buf, sizeof(buf), "\"%d%%\"", (int)v);
+    return std::string(buf);
+}
+// ── Minimal JSON helpers ──────────────────────────────────────────────────────
 static double getNum(const std::string& json, const std::string& key) {
     auto pos = json.find("\"" + key + "\"");
     if (pos == std::string::npos) return -1;
     pos = json.find(':', pos);
-    return std::stod(json.substr(pos + 1));
+    if (pos == std::string::npos) return -1;
+    size_t start = pos + 1;
+    while (start < json.size() && (json[start] == ' ' || json[start] == '\t')) ++start;
+    return std::stod(json.substr(start));
 }
 
 static std::string getStr(const std::string& json, const std::string& key) {
@@ -46,7 +59,6 @@ static std::vector<std::string> splitArray(const std::string& json, const std::s
     return items;
 }
 
-// ── Neighbor machine parsers ──────────────────────────────────────────────────
 static std::vector<ScheduleBlock> parseNeighborSchedule(const std::string& json, const std::string& key) {
     std::vector<ScheduleBlock> schedule;
     for (const auto& item : splitArray(json, key)) {
@@ -69,8 +81,8 @@ static AMA* buildAMA(const std::string& json) {
     auto schedule = parseNeighborSchedule(json, "ama_schedule");
     AMA* ama = new AMA(amaId, schedule);
     for (const auto& jl : splitArray(json, "job_links")) {
-        std::string jobId   = getStr(jl, "job_id");
-        double readyTime    = getNum(jl, "ready_time");
+        std::string jobId = getStr(jl, "job_id");
+        double readyTime  = getNum(jl, "ready_time");
         if (!jobId.empty() && readyTime >= 0) ama->jobCompletionTimes[jobId] = readyTime;
     }
     return ama;
@@ -84,9 +96,31 @@ static AMV* buildAMV(const std::string& json) {
     for (const auto& jl : splitArray(json, "job_links")) {
         std::string jobId          = getStr(jl, "job_id");
         double expectedStartOnNext = getNum(jl, "expected_start_on_next");
-        if (!jobId.empty() && expectedStartOnNext >= 0) amv->expectedArrivalTimes[jobId] = expectedStartOnNext;
+        if (!jobId.empty() && expectedStartOnNext >= 0)
+            amv->expectedArrivalTimes[jobId] = expectedStartOnNext;
     }
     return amv;
+}
+
+// ── Serialise a StabilityMetrics block into JSON ──────────────────────────────
+static std::string stabilityJson(const StabilityMetrics& m) {
+    std::ostringstream j;
+    j << std::fixed
+      << "{\"stable\":"      << m.stable_percent
+      << ",\"improved\":"    << m.improved_percent
+      << ",\"deteriorated\":" << m.deteriorated_percent
+      << "}";
+    return j.str();
+}
+
+// ── Serialise a SplitMetrics block into JSON ──────────────────────────────────
+static std::string splitJson(const SplitMetrics& s) {
+    std::ostringstream j;
+    j << std::fixed
+      << "{\"single_ms\":" << s.single_ms
+      << ",\"multi_ms\":"  << s.multi_ms
+      << "}";
+    return j.str();
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -99,91 +133,173 @@ int main() {
             [](char c){ return c == '\n' || c == '\r'; }), input.end());
 
     if (input.empty() || input.find('{') == std::string::npos) {
-        jsonLog("SYS", "ERROR: No dynamic data received from Kotlin UI.", "error");
+        jsonLog("SYS", "ERROR: No JSON received from Kotlin UI.", "error");
         return 1;
     }
 
     std::string mode = getStr(input, "mode");
     if (mode.empty()) mode = "single";
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // BENCHMARK MODE
+    // ══════════════════════════════════════════════════════════════════════════
     if (mode == "benchmark") {
         std::string outputDir = getStr(input, "output_dir");
         if (outputDir.empty()) outputDir = "./benchmark_results/";
-
-        jsonLog("SYS", "Starting Phase 5 Benchmark Suite...");
-
         try {
             BenchmarkRunner::runCompleteBenchmark(outputDir);
-
-            // Return success JSON
-            std::cout << "{\"type\":\"benchmark_complete\","
-                      << "\"status\":\"success\","
-                      << "\"output_dir\":\"" << outputDir << "\","
-                      << "\"files\":["
-                      << "\"raw_results.csv\","
-                      << "\"aggregated_results.csv\","
-                      << "\"latex_tables.tex\","
-                      << "\"analysis_report.txt\""
-                      << "]}" << std::endl;
-
-            return 0;
-        }
-        catch (const std::exception& e) {
-            std::cout << "{\"type\":\"benchmark_error\","
-                      << "\"error\":\"" << e.what() << "\"}" << std::endl;
-            return 1;
-        }
+            std::cout << "{\"type\":\"benchmark_complete\",\"status\":\"success\"}"
+                      << std::endl;
+        } catch (...) { return 1; }
+        return 0;
     }
-    // 🌟 🌟 🌟 الإضافة الجديدة: وضع الاختبار المجمع (Batch Mode) 🌟 🌟 🌟
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // BATCH MODE  →  Tableau 4.6 & 4.7
+    // ══════════════════════════════════════════════════════════════════════════
     if (mode == "batch") {
         BatchParams params;
-        params.num_machines  = (int)getNum(input, "machines");
-        params.num_jobs      = (int)getNum(input, "jobs");
-        params.num_arhs      = (int)getNum(input, "arhs");
+        params.num_machines  = static_cast<int>(getNum(input, "machines"));
+        params.num_jobs      = static_cast<int>(getNum(input, "jobs"));
+        params.num_arhs      = static_cast<int>(getNum(input, "arhs"));
         params.w1            = getNum(input, "w1");
         params.w2            = getNum(input, "w2");
-        params.num_scenarios = (int)getNum(input, "scenarios");
+        params.num_scenarios = static_cast<int>(getNum(input, "scenarios"));
 
         BatchSimulationResult result = BatchSimulator::runBatch(params);
 
-        std::string json = "{";
-        json += "\"type\":\"batch_result\",";
+        // ── Build the JSON response ─────────────────────────────────────────
+        std::ostringstream json;
+        json << std::fixed;
 
-        json += "\"stability\": {";
-        json += "\"stable\":" + std::to_string(result.stability_index.stable_percent) + ",";
-        json += "\"improved\":" + std::to_string(result.stability_index.improved_percent) + ",";
-        json += "\"deteriorated\":" + std::to_string(result.stability_index.deteriorated_percent);
-        json += "},";
+        json << "{\"type\":\"batch_result\"";
 
-        json += "\"recommendation\": \"" + result.ai_recommendation + "\",";
+        // stability — nested (single + multi) for Tableau 4.7
+        json << ",\"stability\":{"
+             << "\"single\":" << stabilityJson(result.stability_index.single_machine)
+             << ",\"multi\":"  << stabilityJson(result.stability_index.multi_machine)
+             << "}";
 
-        json += "\"reactivity\": [";
+        // recommendation
+        json << ",\"recommendation\":\"" << result.ai_recommendation << "\"";
+
+        // reactivity array — for line chart
+        json << ",\"reactivity\":[";
         for (size_t i = 0; i < result.reactivity_chart_data.size(); ++i) {
-            auto& data = result.reactivity_chart_data[i];
-            json += "{\"jobs\":" + std::to_string(data.num_jobs) + ",";
-            json += "\"single_ms\":" + std::to_string(data.single_machine_time_ms) + ",";
-            json += "\"multi_ms\":" + std::to_string(data.multi_machine_time_ms) + "}";
-            if (i < result.reactivity_chart_data.size() - 1) json += ",";
+            const auto& d = result.reactivity_chart_data[i];
+            if (i > 0) json << ",";
+            json << "{\"jobs\":"      << d.num_jobs
+                 << ",\"single_ms\":" << d.single_machine_time_ms
+                 << ",\"multi_ms\":"  << d.multi_machine_time_ms
+                 << "}";
         }
-        json += "],";
+        json << "]";
 
-        // الهروب المزدوج للـ CSV لكي لا يكسر الـ JSON
+        // splits — averages per anomaly position for Tableau 4.6
+        json << ",\"splits\":{"
+             << "\"debut\":"  << splitJson(result.debut_splits)  << ","
+             << "\"milieu\":" << splitJson(result.milieu_splits) << ","
+             << "\"fin\":"    << splitJson(result.fin_splits)
+             << "}";
+
+        // csv_data — escape newlines for safe embedding in JSON string
         std::string safeCsv = result.csv_export_data;
-        size_t pos = 0;
-        while ((pos = safeCsv.find('\n', pos)) != std::string::npos) {
-            safeCsv.replace(pos, 1, "\\n"); pos += 2;
-        }
-        json += "\"csv_data\": \"" + safeCsv + "\"";
+        for (size_t p = 0; (p = safeCsv.find('\n', p)) != std::string::npos; p += 2)
+            safeCsv.replace(p, 1, "\\n");
 
-        json += "}";
+        json << ",\"csv_data\":\"" << safeCsv << "\"";
 
-        // طباعة النتيجة لكي تقرأها Kotlin
-        std::cout << json << std::endl;
-        return 0; // إنهاء التنفيذ هنا
+        json << "}";
+
+        std::cout << json.str() << std::endl;
+        return 0;
     }
-    // 🌟 🌟 🌟 نهاية الإضافة الجديدة 🌟 🌟 🌟
+    if (mode == "academic_benchmark") {
+        std::ostringstream json;
+        json << "{\"type\":\"academic_benchmark\",";
 
+        // --- Generate Table 4.6 ---
+        json << "\"table46\":[";
+        std::vector<int> m0s = {5, 10, 20};
+        std::vector<int> m1s = {20, 50, 100};
+        std::vector<int> m4s = {2, 4, 8};
+        bool first46 = true;
 
-    // ── Parse common fields for single/multi mode ─────────────────────────────
+        for (int m0: m0s) {
+            for (int m1: m1s) {
+                for (int m4: m4s) {
+                    BatchParams pSOM = {m0, m1, m4, 0.3, 0.7, 100};
+                    BatchParams pSOP = {m0, m1, m4, 0.7, 0.3, 100};
+                    auto som = BatchSimulator::runBatch(pSOM);
+                    auto sop = BatchSimulator::runBatch(pSOP);
+
+                    if (!first46) json << ",";
+                    first46 = false;
+
+                    json << "{"
+                         << "\"m0\":\"" << m0 << "\",\"m1\":\"" << m1 << "\",\"m4\":\"" << m4
+                         << "\","
+                         << "\"s_debut_som\":" << fMs(som.debut_splits.single_ms) << ","
+                         << "\"s_debut_sop\":" << fMs(sop.debut_splits.single_ms) << ","
+                         << "\"s_milieu_som\":" << fMs(som.milieu_splits.single_ms) << ","
+                         << "\"s_milieu_sop\":" << fMs(sop.milieu_splits.single_ms) << ","
+                         << "\"s_fin_som\":" << fMs(som.fin_splits.single_ms) << ","
+                         << "\"s_fin_sop\":" << fMs(sop.fin_splits.single_ms) << ","
+                         << "\"m_debut_som\":" << fMs(som.debut_splits.multi_ms) << ","
+                         << "\"m_debut_sop\":" << fMs(sop.debut_splits.multi_ms) << ","
+                         << "\"m_milieu_som\":" << fMs(som.milieu_splits.multi_ms) << ","
+                         << "\"m_milieu_sop\":" << fMs(sop.milieu_splits.multi_ms) << ","
+                         << "\"m_fin_som\":" << fMs(som.fin_splits.multi_ms) << ","
+                         << "\"m_fin_sop\":" << fMs(sop.fin_splits.multi_ms)
+                         << "}";
+                }
+            }
+        }
+        json << "],";
+
+        // --- Generate Table 4.7 ---
+        json << "\"table47\":[";
+        bool first47 = true;
+        for (int m4: m4s) {
+            BatchParams pSOM = {20, 60, m4, 0.3, 0.7, 100};
+            BatchParams pSOP = {20, 60, m4, 0.7, 0.3, 100};
+            auto som = BatchSimulator::runBatch(pSOM);
+            auto sop = BatchSimulator::runBatch(pSOP);
+
+            if (!first47) json << ",";
+            first47 = false;
+
+            json << "{"
+                 << "\"m4\":\"" << m4 << "\","
+                 << "\"s_s_som\":" << fPct(som.stability_index.single_machine.stable_percent) << ","
+                 << "\"s_s_sop\":" << fPct(sop.stability_index.single_machine.stable_percent) << ","
+                 << "\"s_a_som\":" << fPct(som.stability_index.single_machine.improved_percent)
+                 << ","
+                 << "\"s_a_sop\":" << fPct(sop.stability_index.single_machine.improved_percent)
+                 << ","
+                 << "\"s_d_som\":" << fPct(som.stability_index.single_machine.deteriorated_percent)
+                 << ","
+                 << "\"s_d_sop\":" << fPct(sop.stability_index.single_machine.deteriorated_percent)
+                 << ","
+                 << "\"m_s_som\":" << fPct(som.stability_index.multi_machine.stable_percent) << ","
+                 << "\"m_s_sop\":" << fPct(sop.stability_index.multi_machine.stable_percent) << ","
+                 << "\"m_a_som\":" << fPct(som.stability_index.multi_machine.improved_percent)
+                 << ","
+                 << "\"m_a_sop\":" << fPct(sop.stability_index.multi_machine.improved_percent)
+                 << ","
+                 << "\"m_d_som\":" << fPct(som.stability_index.multi_machine.deteriorated_percent)
+                 << ","
+                 << "\"m_d_sop\":" << fPct(sop.stability_index.multi_machine.deteriorated_percent)
+                 << "}";
+        }
+        json << "]}";
+
+        std::cout << json.str() << std::endl;
+        return 0;
+    }
+    // ══════════════════════════════════════════════════════════════════════════
+    // SINGLE / MULTI MODE
+    // ══════════════════════════════════════════════════════════════════════════
     double alertTime       = getNum(input, "alert_time");
     double schedulingStart = getNum(input, "scheduling_start");
     double w1              = getNum(input, "w1");
@@ -193,17 +309,14 @@ int main() {
     double rulMax          = getNum(input, "rul_max");
     std::string strategy   = getStr(input, "strategy");
 
-    // ── Parse production jobs ─────────────────────────────────────────────────
     std::vector<ProductionJob> jobs;
     for (const auto& ji : splitArray(input, "jobs"))
         jobs.push_back({getStr(ji, "id"), getNum(ji, "duration"), getNum(ji, "due_date")});
 
-    // ── Parse TBM blocks ──────────────────────────────────────────────────────
     std::vector<TBMBlock> tbmBlocks;
     for (const auto& ti : splitArray(input, "tbm_blocks"))
         tbmBlocks.push_back({getStr(ti, "id"), getNum(ti, "start"), getNum(ti, "end")});
 
-    // ── Parse ARH agents ──────────────────────────────────────────────────────
     std::vector<ARH> arhList;
     for (const auto& ai : splitArray(input, "arh_agents")) {
         ARH arh;
@@ -215,38 +328,26 @@ int main() {
         arhList.push_back(arh);
     }
 
-    // ── Build agents ──────────────────────────────────────────────────────────
     AMC  amc;
     ASRH asrh(arhList);
     AMS  ams(&amc, &asrh, alertTime, w1, w2);
 
-    // ── Attach neighbors only when UI tab = "Global Factory" (mode=multi) ─────
     AMA* ama = nullptr;
     AMV* amv = nullptr;
 
     if (mode == "multi") {
         ama = buildAMA(input);
         amv = buildAMV(input);
-
-        if (ama != nullptr && amv != nullptr) {
+        if (ama && amv)
             ams.setNeighbors(ama, amv);
-            jsonLog("SYS", "Multi-machine mode: AMA=" + ama->id
-                    + ", AMV=" + amv->id + " attached to AMS.");
-        } else {
-            jsonLog("SYS",
-                    "Multi-machine mode requested but ama_id/amv_id missing in input. "
-                    "Falling back to single-machine.", "warn");
+        else
             mode = "single";
-        }
     }
 
-    // ── Run — AMS handles everything based on mode ────────────────────────────
     ams.handleAnomaly(schedulingStart, jobs, tbmBlocks,
             strategy, rulMin, rulProb, rulMax, mode);
 
-    // ── Cleanup ───────────────────────────────────────────────────────────────
     delete ama;
     delete amv;
-
     return 0;
 }

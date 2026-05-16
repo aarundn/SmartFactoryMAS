@@ -33,7 +33,17 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smartfactorymas.BatchResultEvent
+import com.example.smartfactorymas.FullTableau46
+import com.example.smartfactorymas.FullTableau47
 import com.example.smartfactorymas.SimulationDomain
+import com.example.smartfactorymas.Table46Row
+import com.example.smartfactorymas.Table47Row
+import com.example.smartfactorymas.formatMs
+import com.example.smartfactorymas.formatPct
+import com.example.smartfactorymas.getEmptyTable46Data
+import com.example.smartfactorymas.getEmptyTable47Data
+import com.example.smartfactorymas.toModelList
+import com.example.smartfactorymas.toModelList1
 import kotlinx.coroutines.launch
 
 // ============================================================
@@ -127,21 +137,21 @@ fun SidebarItem(icon: ImageVector, label: String, isSelected: Boolean = false) {
 // ============================================================
 @Composable
 fun AdvancedAnalyticsLabScreen() {
-    // 🌟 1. Instantiate your Simulation Engine & Coroutine Scope
     val domain = remember { SimulationDomain() }
     val coroutineScope = rememberCoroutineScope()
 
-    // 🌟 2. Shared State
     var strategyIsSOM by remember { mutableStateOf(true) }
     var anomalyNodeId by remember { mutableStateOf(4) }
     var factorySize by remember { mutableStateOf(20f) }
     var selectedTechs by remember { mutableStateOf(4) }
 
-    // 🌟 3. Execution State
     var isSimulating by remember { mutableStateOf(false) }
     var batchResult by remember { mutableStateOf<BatchResultEvent?>(null) }
 
-    // Derived
+    // 🌟 Initialize with the "--" empty states
+    var table46Data by remember { mutableStateOf<List<Table46Row>>(getEmptyTable46Data()) }
+    var table47Data by remember { mutableStateOf<List<Table47Row>>(getEmptyTable47Data()) }
+
     val w1 = if (strategyIsSOM) 0.3 else 0.7
     val w2 = 1.0 - w1
     val affectedNodes = listOf(anomalyNodeId + 1, anomalyNodeId + 2)
@@ -152,36 +162,143 @@ fun AdvancedAnalyticsLabScreen() {
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        // --- TOP ROW: Maps and Charts ---
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            Column(modifier = Modifier.weight(0.4f), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                FactoryNodeMap(anomalyNodeId, affectedNodes)
+                FocusedTimelineView()
+            }
             Column(modifier = Modifier.weight(0.6f), verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 ScenarioConfigCard(
-                    factorySize = factorySize,
-                    onFactorySizeChange = { factorySize = it },
-                    selectedTechs = selectedTechs,
-                    onTechsChange = { selectedTechs = it },
-                    strategyIsSOM = strategyIsSOM,
-                    onStrategyChange = { strategyIsSOM = it },
+                    factorySize = factorySize, onFactorySizeChange = { factorySize = it },
+                    selectedTechs = selectedTechs, onTechsChange = { selectedTechs = it },
+                    strategyIsSOM = strategyIsSOM, onStrategyChange = { strategyIsSOM = it },
                     isSimulating = isSimulating,
                     onRunClick = {
-                        // 🌟 4. Execute the Simulation when clicked!
                         coroutineScope.launch {
                             isSimulating = true
-                            batchResult = domain.runBatchSimulationCLI(
-                                machines = factorySize.toInt(),
-                                jobs = factorySize.toInt() * 3, // Arbitrary job scaling
-                                arhs = selectedTechs,
-                                w1 = w1,
-                                w2 = w2,
-                                scenarios = 100
-                            )
+                            table46Data = getEmptyTable46Data()
+                            table47Data = getEmptyTable47Data()
+
+                            // 1. Run the small batch to update the Top Dashboard Charts
+                            val w1 = if (strategyIsSOM) 0.3 else 0.7
+                            val w2 = 1.0 - w1
+                            batchResult = domain.runBatchSimulationCLI(factorySize.toInt(), factorySize.toInt() * 3, selectedTechs, w1, w2, 100)
+
+                            // 2. 🌟 FIRE THE C++ ENGINE ONCE FOR THE ENTIRE ACADEMIC BENCHMARK 🌟
+                            val benchmarkResult = domain.runFullAcademicBenchmark()
+
+                            if (benchmarkResult != null) {
+                                table46Data = benchmarkResult.table46
+                                table47Data = benchmarkResult.table47
+                            }
+
                             isSimulating = false
                         }
                     }
                 )
-
-                // Pass the dynamic results down to the charts
                 StabilityReactivityPanel(batchResult, isSimulating)
                 StrategicInsightCard(batchResult, isSimulating)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // --- BOTTOM SECTION: The Academic Tables ---
+        Text("Academic Data Visualization", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppColors.TextMain)
+        Text("Real-time benchmark generation matching the thesis methodology.", fontSize = 13.sp, color = AppColors.TextMuted)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // The tables will ALWAYS render. They will just show "--" until the Coroutine finishes!
+        FullTableau46(rows = table46Data.toModelList1())
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        FullTableau47(rows = table47Data.toModelList())
+
+        Spacer(modifier = Modifier.height(48.dp))
+    }
+}
+
+// 🌟 VERY IMPORTANT UPDATE: The Chart must now point to .multi.stable 🌟
+@Composable
+fun StabilityReactivityPanel(batchResult: BatchResultEvent?, isSimulating: Boolean) {
+
+    // Extract Dynamic Data (Now pointing to the MULTI-MACHINE stability for the global factory health!)
+    val stablePct = batchResult?.stability?.multi?.stable?.toFloat() ?: 0f
+    val improvedPct = batchResult?.stability?.multi?.improved?.toFloat() ?: 0f
+    val deterioratedPct = batchResult?.stability?.multi?.deteriorated?.toFloat() ?: 0f
+
+    val totalPositive = (stablePct + improvedPct).toInt()
+
+    val stableAngle = (stablePct / 100f) * 360f
+    val improvedAngle = (improvedPct / 100f) * 360f
+    val deterioratedAngle = (deterioratedPct / 100f) * 360f
+
+    val avgSingle = batchResult?.reactivity?.map { it.singleMs }?.average() ?: 0.0
+    val avgMulti = batchResult?.reactivity?.map { it.multiMs }?.average() ?: 0.0
+    val maxReactivity = maxOf(avgSingle.toFloat(), avgMulti.toFloat(), 1f)
+
+    fun formatMs(value: Double): String = "%.2f".format(value)
+
+    Card(colors = CardDefaults.cardColors(containerColor = AppColors.Surface), border = BorderStroke(1.dp, AppColors.Outline), modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.padding(20.dp).fillMaxWidth()) {
+
+            // ── Left: Donut Chart ──
+            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Global Factory Stability (Multi-Machine)", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (isSimulating) {
+                    Box(modifier = Modifier.size(100.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = AppColors.Primary) }
+                } else {
+                    Box(modifier = Modifier.size(100.dp), contentAlignment = Alignment.Center) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val strokeStyle = Stroke(width = 20f, cap = StrokeCap.Butt)
+                            drawArc(AppColors.Primary, -90f, stableAngle, false, style = strokeStyle)
+                            drawArc(AppColors.Warning, -90f + stableAngle, improvedAngle, false, style = strokeStyle)
+                            drawArc(AppColors.Error, -90f + stableAngle + improvedAngle, deterioratedAngle, false, style = strokeStyle)
+                        }
+                        Text(if (batchResult == null) "--%" else "${totalPositive}%", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LegendItem("Stable", AppColors.Primary, true)
+                    LegendItem("Amélioré", AppColors.Warning, true)
+                    LegendItem("Détérioré", AppColors.Error, true)
+                }
+            }
+
+            // ── Right: Reactivity Bars ──
+            Column(modifier = Modifier.weight(1f)) {
+                Text("System Reactivity (Avg ms)", fontWeight = FontWeight.Bold, color = AppColors.TextMuted, fontSize = 12.sp)
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text("1 Node (Local)", fontSize = 12.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    LinearProgressIndicator(progress = if (isSimulating || batchResult == null) 0f else (avgSingle.toFloat() / maxReactivity), color = AppColors.Primary, trackColor = AppColors.Background, modifier = Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (batchResult == null) "--" else "${formatMs(avgSingle)}ms", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text("Multi-Node (Global)", fontSize = 12.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    LinearProgressIndicator(progress = if (isSimulating || batchResult == null) 0f else (avgMulti.toFloat() / maxReactivity), color = AppColors.Warning, trackColor = AppColors.Background, modifier = Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (batchResult == null) "--" else "${formatMs(avgMulti)}ms", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                val diff = if (batchResult != null) formatMs(avgMulti - avgSingle) else "0"
+                val descText = if (batchResult == null) "Run simulation to calculate ripple effect."
+                else if (avgMulti < avgSingle) "Multi-machine resolution runs faster due to localized heuristic checks."
+                else "Multi-machine ripple effect adds avg +${diff}ms resolution time."
+
+                Text(descText, fontSize = 11.sp, color = AppColors.TextMuted, lineHeight = 16.sp)
             }
         }
     }
@@ -393,113 +510,6 @@ fun ScenarioConfigCard(
 //  🔴 Component: Stability Reactivity Panel (FIXED DECIMALS)
 // ============================================================
 @Composable
-fun StabilityReactivityPanel(batchResult: BatchResultEvent?, isSimulating: Boolean) {
-
-    // Extract Dynamic Data
-    val stablePct = batchResult?.stability?.stable?.toFloat() ?: 0f
-    val improvedPct = batchResult?.stability?.improved?.toFloat() ?: 0f
-    val deterioratedPct = batchResult?.stability?.deteriorated?.toFloat() ?: 0f
-
-    val totalPositive = (stablePct + improvedPct).toInt()
-
-    // Convert percentages to 360-degree angles
-    val stableAngle = (stablePct / 100f) * 360f
-    val improvedAngle = (improvedPct / 100f) * 360f
-    val deterioratedAngle = (deterioratedPct / 100f) * 360f
-
-    // 🌟 FIX: Use double precision for the averages
-    val avgSingle = batchResult?.reactivity?.map { it.singleMs }?.average() ?: 0.0
-    val avgMulti = batchResult?.reactivity?.map { it.multiMs }?.average() ?: 0.0
-    val maxReactivity = maxOf(avgSingle.toFloat(), avgMulti.toFloat(), 1f)
-
-    // Helper function to format the number to 2 decimal places
-    fun formatMs(value: Double): String {
-        return "%.2f".format(value)
-    }
-
-    Card(
-        colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
-        border = BorderStroke(1.dp, AppColors.Outline),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(modifier = Modifier.padding(20.dp).fillMaxWidth()) {
-
-            // ── Left: Donut Chart ──
-            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Factory Stability Index", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
-                Spacer(modifier = Modifier.height(16.dp))
-
-                if (isSimulating) {
-                    Box(modifier = Modifier.size(100.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = AppColors.Primary)
-                    }
-                } else {
-                    Box(modifier = Modifier.size(100.dp), contentAlignment = Alignment.Center) {
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            val strokeStyle = Stroke(width = 20f, cap = StrokeCap.Butt)
-                            drawArc(AppColors.Primary, -90f, stableAngle, false, style = strokeStyle)
-                            drawArc(AppColors.Warning, -90f + stableAngle, improvedAngle, false, style = strokeStyle)
-                            drawArc(AppColors.Error, -90f + stableAngle + improvedAngle, deterioratedAngle, false, style = strokeStyle)
-                        }
-                        Text(if (batchResult == null) "--%" else "${totalPositive}%", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    LegendItem("Stable", AppColors.Primary, true)
-                    LegendItem("Amélioré", AppColors.Warning, true)
-                    LegendItem("Détérioré", AppColors.Error, true)
-                }
-            }
-
-            // ── Right: Reactivity Bars ──
-            Column(modifier = Modifier.weight(1f)) {
-                Text("System Reactivity (Avg ms)", fontWeight = FontWeight.Bold, color = AppColors.TextMuted, fontSize = 12.sp)
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Text("1 Node (Local)", fontSize = 12.sp)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    LinearProgressIndicator(
-                        progress = if (isSimulating || batchResult == null) 0f else (avgSingle.toFloat() / maxReactivity),
-                        color = AppColors.Primary,
-                        trackColor = AppColors.Background,
-                        modifier = Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp))
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    // 🌟 FIX: Use the formatted string
-                    Text(if (batchResult == null) "--" else "${formatMs(avgSingle)}ms", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text("Multi-Node (Global)", fontSize = 12.sp)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    LinearProgressIndicator(
-                        progress = if (isSimulating || batchResult == null) 0f else (avgMulti.toFloat() / maxReactivity),
-                        color = AppColors.Warning,
-                        trackColor = AppColors.Background,
-                        modifier = Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp))
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    // 🌟 FIX: Use the formatted string
-                    Text(if (batchResult == null) "--" else "${formatMs(avgMulti)}ms", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 🌟 FIX: Accurately calculate the difference using Doubles
-                val diff = if (batchResult != null) formatMs(avgMulti - avgSingle) else "0"
-
-                val descText = if (batchResult == null) "Run simulation to calculate ripple effect."
-                else if (avgMulti < avgSingle) "Multi-machine resolution runs faster due to localized heuristic checks."
-                else "Multi-machine ripple effect adds avg +${diff}ms resolution time."
-
-                Text(descText, fontSize = 11.sp, color = AppColors.TextMuted, lineHeight = 16.sp)
-            }
-        }
-    }
-}@Composable
 fun StrategicInsightCard(batchResult: BatchResultEvent?, isSimulating: Boolean) {
     Card(
         colors = CardDefaults.cardColors(containerColor = AppColors.Surface),

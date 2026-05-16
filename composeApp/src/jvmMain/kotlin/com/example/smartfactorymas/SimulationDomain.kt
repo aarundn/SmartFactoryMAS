@@ -3,6 +3,7 @@ package com.example.smartfactorymas
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import java.io.File
 
 /**
  * SimulationDomain bridges Kotlin UI ↔ C++ core_engine.exe
@@ -158,7 +159,16 @@ class SimulationDomain {
 
         return blocks.sortedBy { it.startTime }
     }
-
+    suspend fun runFullAcademicBenchmark(): AcademicBenchmarkEvent? = withContext(Dispatchers.IO) {
+        val inputJson = "{\"mode\":\"academic_benchmark\"}"
+        try {
+            // Simply call the new method we just built in CliInterop
+            CliInterop.runAcademicBenchmark(inputJson)
+        } catch (e: Exception) {
+            println("❌ Academic Benchmark error: ${e.message}")
+            null
+        }
+    }
     // ── Fallback (when C++ binary not found) ────────────────────────────
     private fun createFallbackResult(
         machines: Int,
@@ -169,27 +179,48 @@ class SimulationDomain {
         scenarios: Int
     ): BatchResultEvent {
         val strategy = if (w2 > w1) "SOM (Safety First)" else "SOP (Production First)"
-        val stablePercent = when (arhs) {
+
+        // Mocking Multi-Machine stability
+        val multiStablePercent = when (arhs) {
             2 -> 58.0; 4 -> 72.0; 8 -> 75.0; else -> 65.0
         }
+        // Mocking Single-Machine stability
+        val singleStablePercent = multiStablePercent - 40.0
+
         val reactivity = (1..4).map { i ->
             BatchReactivity(
                 jobs = i * (jobs / 4),
-                singleMs = (i * 12.5),
-                multiMs = (i * 30.0)
+                singleMs = (i * 7.5),
+                multiMs = (i * 0.5)
             )
         }
+
         val csvBuilder = StringBuilder()
         csvBuilder.appendLine("Scenario,Jobs,ARHs,w1,w2,SingleTimeMs,MultiTimeMs,InitialDelay,FinalDelay")
         repeat(minOf(scenarios, 20)) { s ->
             csvBuilder.appendLine("${s + 1},$jobs,$arhs,$w1,$w2,${(10..25).random()}.${(0..9).random()},${(20..50).random()}.${(0..9).random()},${(30..80).random()}.0,${(28..85).random()}.0")
         }
 
+        // 🌟 FIX: Injecting mock splits so the fallback doesn't crash the UI Tables
+        val mockSplits = BatchSplits(
+            debut = SplitMetrics(7.2, 0.4),
+            milieu = SplitMetrics(6.8, 0.5),
+            fin = SplitMetrics(5.5, 0.3)
+        )
+
         return BatchResultEvent(
+            // 🌟 FIX: Updated to match the new nested stability structure
             stability = BatchStability(
-                stable = stablePercent,
-                improved = 13.0,
-                deteriorated = 100.0 - stablePercent - 13.0
+                single = StabilityMetrics(
+                    stable = singleStablePercent,
+                    improved = 20.0,
+                    deteriorated = 100.0 - singleStablePercent - 20.0
+                ),
+                multi = StabilityMetrics(
+                    stable = multiStablePercent,
+                    improved = 13.0,
+                    deteriorated = 100.0 - multiStablePercent - 13.0
+                )
             ),
             recommendation = "Based on $scenarios simulations of $machines machines: " +
                     "Strategy **$strategy** with **$arhs technicians** is recommended. " +
@@ -197,6 +228,7 @@ class SimulationDomain {
                     else if (arhs <= 2) "System is bottlenecked. Hiring more technicians will reduce delay."
                     else "Optimal configuration confirmed.",
             reactivity = reactivity,
+            splits = mockSplits, // 🌟 FIX: Adding splits
             csvData = csvBuilder.toString()
         )
     }
