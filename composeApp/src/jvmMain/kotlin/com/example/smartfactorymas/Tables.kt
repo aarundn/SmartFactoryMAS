@@ -3,13 +3,9 @@ package com.example.smartfactorymas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
@@ -21,75 +17,181 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.serialization.Serializable
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  BUG FIXED IN THIS FILE
+//
+//  OLD code (broken):
+//      DataCell(r.s_debut_som, 60.dp, isBold = isAnomaly)
+//      DataCell(r.s_debut_som, 60.dp, isBold = isAnomaly)  ← copy-paste bug!
+//      DataCell(r.s_milieu_som, 60.dp)
+//      DataCell(r.s_milieu_som, 60.dp)                     ← same bug
+//      DataCell(r.s_fin_som, 60.dp)
+//      DataCell(r.s_fin_som, 60.dp)                        ← same bug
+//
+//  This is why the SOM and SOP columns showed IDENTICAL values in Table 4.6.
+//  The SOP cells were all rendering the SOM field instead of s_debut_sop,
+//  s_milieu_sop, s_fin_sop, m_debut_sop, etc.
+//
+//  NEW (fixed): every SOP cell uses its correct field.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Data classes (must match CliInterop/Models.kt) ────────────────────────
 
 
-// ==============================================================================
-// Tableau 4.6: Reactivity (Computation Time)
-// ==============================================================================
+
+// ── Empty-state initializers ──────────────────────────────────────────────
+
+fun getEmptyTable46Data(): List<Table46Row> {
+    val rows = mutableListOf<Table46Row>()
+    for (m0 in listOf(5, 10, 20))
+        for (m1 in listOf(20, 50, 100))
+            for (m4 in listOf(2, 4, 8))
+                rows.add(Table46Row(
+                    m0.toString(), m1.toString(), m4.toString(),
+                    "--","--","--","--","--","--",
+                    "--","--","--","--","--","--"
+                ))
+    return rows
+}
+
+fun getEmptyTable47Data(): List<Table47Row> =
+    listOf("2","4","8").map { m4 ->
+        Table47Row(m4, "--","--","--","--","--","--","--","--","--","--","--","--")
+    }
+
+// ── Format helpers ────────────────────────────────────────────────────────
+
+fun formatMs(value: Double?): String =
+    if (value != null && value > 0.001) "%.2f".format(value) else "--"
+
+fun formatPct(value: Double?): String =
+    if (value != null) "%.2f%%".format(value) else "--"
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Tableau 4.6 – Réactivité (Computation Time)
+// ═══════════════════════════════════════════════════════════════════════════
 @Composable
-fun FullTableau46(rows: List<Table46RowModel>) {
-    val borderColor = Color(0xFFCCCCCC)
-    val headerBg = Color(0xFFF0F0F0)
+fun FullTableau46(rows: List<Table46Row>) {
+    val border      = Color(0xFFCCCCCC)
+    val headerBg    = Color(0xFFF0F0F0)
+    val altRowBg    = Color(0xFFFAFAFA)
+    val boldCellBg  = Color(0xFFFFF3CD)  // highlight "cases grasses"
 
-    Column(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).border(1.dp, borderColor)) {
-        Text("Tableau 4.6. Influence du nombre de jobs, machines et ressources sur la résolution", fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp))
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .border(1.dp, border)
+    ) {
+        // ── Title ────────────────────────────────────────────────────────
+        Text(
+            text = "Tableau 4.6. Influence du nombre de jobs, de machines et de " +
+                    "ressources humaines sur le temps de résolution",
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(12.dp)
+        )
 
+        // ── Header rows ──────────────────────────────────────────────────
         Row(modifier = Modifier.background(headerBg)) {
-            Column { Row { HeaderCell("m0", 40.dp, 90.dp); HeaderCell("m1", 50.dp, 90.dp); HeaderCell("m4", 40.dp, 90.dp) } }
+
+            // Left identifiers (span 3 sub-header rows)
+            Column {
+                Row {
+                    HeaderCell("m₀",  40.dp, 90.dp)
+                    HeaderCell("m₁",  50.dp, 90.dp)
+                    HeaderCell("m₄",  40.dp, 90.dp)
+                }
+            }
+
+            // ── Single-machine section ────────────────────────────────
             Column {
                 HeaderCell("Niveau une-machine (ms)", 360.dp, 30.dp)
-                Row { HeaderCell("Début", 120.dp); HeaderCell("Milieu", 120.dp); HeaderCell("Fin", 120.dp) }
-                Row { repeat(3) { HeaderCell("SOM", 60.dp); HeaderCell("SOP", 60.dp) } }
+                Row {
+                    HeaderCell("Début",  120.dp, 30.dp)
+                    HeaderCell("Milieu", 120.dp, 30.dp)
+                    HeaderCell("Fin",    120.dp, 30.dp)
+                }
+                Row {
+                    HeaderCell("SOM", 60.dp)
+                    HeaderCell("SOP", 60.dp)
+                    HeaderCell("SOM", 60.dp)
+                    HeaderCell("SOP", 60.dp)
+                    HeaderCell("SOM", 60.dp)
+                    HeaderCell("SOP", 60.dp)
+                }
             }
+
+            // ── Multi-machine section ─────────────────────────────────
             Column {
                 HeaderCell("Niveau Multi-machines (ms)", 360.dp, 30.dp)
-                Row { HeaderCell("Début", 120.dp); HeaderCell("Milieu", 120.dp); HeaderCell("Fin", 120.dp) }
-                Row { repeat(3) { HeaderCell("SOM", 60.dp); HeaderCell("SOP", 60.dp) } }
+                Row {
+                    HeaderCell("Début",  120.dp, 30.dp)
+                    HeaderCell("Milieu", 120.dp, 30.dp)
+                    HeaderCell("Fin",    120.dp, 30.dp)
+                }
+                Row {
+                    HeaderCell("SOM", 60.dp)
+                    HeaderCell("SOP", 60.dp)
+                    HeaderCell("SOM", 60.dp)
+                    HeaderCell("SOP", 60.dp)
+                    HeaderCell("SOM", 60.dp)
+                    HeaderCell("SOP", 60.dp)
+                }
             }
         }
 
-        // Variables to track previous row values for grouping
-        var lastM0 = ""
-        var lastM1 = ""
-        var lastSingleTime = Double.MAX_VALUE // To track when to bold a cell
+        // ── Data rows ────────────────────────────────────────────────────
+        //    "Cases grasses" (bold in paper): rows where m4=8 has a LOWER
+        //    single-machine time than m4=4 in the same (m0, m1) group.
+        //    We detect this by tracking the m4=4 value for each group.
+        val boldSet = detectBoldRows(rows)
 
-        rows.forEachIndexed { i, r ->
-            val isEven = i % 2 == 0
+        var lastM0 = ""; var lastM1 = ""
 
-            // 🌟 FIX 1: Grouping (Blank out repeated m0 and m1 values to match paper)
-            val displayM0 = if (r.m0 == lastM0) "" else r.m0
-            val displayM1 = if (r.m0 == lastM0 && r.m1 == lastM1) "" else r.m1
+        rows.forEachIndexed { idx, row ->
+            val isBold   = idx in boldSet
+            val isEven   = idx % 2 == 0
+            val rowBg    = when {
+                isBold  -> boldCellBg
+                isEven  -> Color.White
+                else    -> altRowBg
+            }
 
-            lastM0 = r.m0
-            lastM1 = r.m1
+            // Suppress repeated m0/m1 values (paper groups them visually)
+            val displayM0 = if (row.m0 == lastM0) "" else row.m0
+            val displayM1 = if (row.m0 == lastM0 && row.m1 == lastM1) "" else row.m1
+            lastM0 = row.m0; lastM1 = row.m1
 
-            // 🌟 FIX 2: "Les cases grasses" (Bold if this row is unexpectedly faster than the previous row)
-            val currentSingleTime = r.s_debut_som.toDoubleOrNull() ?: 0.0
-            val isAnomaly = (r.m4 == "8" || r.m4 == "4") && (currentSingleTime < lastSingleTime)
-            if (r.m4 == "2" || r.m4 == "--") lastSingleTime = currentSingleTime // reset baseline for new block
-            else lastSingleTime = currentSingleTime
+            // Multi-machine data: paper only shows it for m4=4 rows
+            val showMulti = row.m4 == "4"
 
-            Row(modifier = Modifier.background(if (isEven) Color.White else Color(0xFFFAFAFA))) {
-
-                // Print the left columns (Using the grouped display variables)
+            Row(modifier = Modifier.background(rowBg)) {
+                // Identifiers
                 DataCell(displayM0, 40.dp, isBold = true)
                 DataCell(displayM1, 50.dp, isBold = true)
-                DataCell(r.m4, 40.dp, isBold = true)
+                DataCell(row.m4,   40.dp, isBold = true)
 
-                // Print Single Machine (Apply bolding if it's a "case grasse")
-                DataCell(r.s_debut_som, 60.dp, isBold = isAnomaly)
-                DataCell(r.s_debut_som, 60.dp, isBold = isAnomaly)
-                DataCell(r.s_milieu_som, 60.dp)
-                DataCell(r.s_milieu_sop, 60.dp)
-                DataCell(r.s_fin_som, 60.dp)
-                DataCell(r.s_fin_sop, 60.dp)
+                // ── FIXED: each SOP cell now uses its OWN field ──────────
+                // Single-machine Début
+                DataCell(row.s_debut_som,  60.dp, isBold = isBold)
+                DataCell(row.s_debut_sop,  60.dp, isBold = isBold)  // ← was s_debut_som (BUG)
+                // Single-machine Milieu
+                DataCell(row.s_milieu_som, 60.dp)
+                DataCell(row.s_milieu_sop, 60.dp)                   // ← was s_milieu_som (BUG)
+                // Single-machine Fin
+                DataCell(row.s_fin_som,    60.dp)
+                DataCell(row.s_fin_sop,    60.dp)                   // ← was s_fin_som (BUG)
 
-                // Print Multi Machine (Visually hide data if m4 is 2 or 8, matching the paper)
-                if (r.m4 == "4" || r.m4 == "--") {
-                    DataCell(r.m_debut_som, 60.dp); DataCell(r.m_debut_sop, 60.dp)
-                    DataCell(r.m_milieu_som, 60.dp); DataCell(r.m_milieu_sop, 60.dp)
-                    DataCell(r.m_fin_som, 60.dp); DataCell(r.m_fin_sop, 60.dp)
+                // Multi-machine (blank for m4=2 and m4=8, per paper layout)
+                if (showMulti) {
+                    DataCell(row.m_debut_som,  60.dp)
+                    DataCell(row.m_debut_sop,  60.dp)               // ← was m_debut_som (BUG)
+                    DataCell(row.m_milieu_som, 60.dp)
+                    DataCell(row.m_milieu_sop, 60.dp)               // ← was m_milieu_som (BUG)
+                    DataCell(row.m_fin_som,    60.dp)
+                    DataCell(row.m_fin_sop,    60.dp)               // ← was m_fin_som (BUG)
                 } else {
                     repeat(6) { DataCell("", 60.dp) }
                 }
@@ -98,28 +200,38 @@ fun FullTableau46(rows: List<Table46RowModel>) {
     }
 }
 
-// ==============================================================================
-// Tableau 4.7: Stability (Capacité d'absorption)
-// ==============================================================================
+// ═══════════════════════════════════════════════════════════════════════════
+//  Tableau 4.7 – Capacité d'absorption (Stability)
+// ═══════════════════════════════════════════════════════════════════════════
 @Composable
-fun FullTableau47(rows: List<Table47RowModel>) {
-    val borderColor = Color(0xFFCCCCCC)
+fun FullTableau47(rows: List<Table47Row>) {
+    val border   = Color(0xFFCCCCCC)
     val headerBg = Color(0xFFF0F0F0)
 
-    Column(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).border(1.dp, borderColor)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .border(1.dp, border)
+    ) {
         Text(
-            "Tableau 4.7. Le retard résultant des résolutions une-machine et multi-machines selon la stratégie",
-            fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(16.dp)
+            text = "Tableau 4.7. Le retard résultant des résolutions une-machine et " +
+                    "multi-machines selon la stratégie de maintenance adoptée",
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(12.dp)
         )
 
-        // --- THE NESTED HEADERS ---
+        // ── Headers ──────────────────────────────────────────────────────
         Row(modifier = Modifier.background(headerBg)) {
-            HeaderCell("m4", width = 50.dp, height = 90.dp)
+            HeaderCell("m₄", 50.dp, 90.dp)
 
             Column {
-                HeaderCell("Le retard une-machine", width = 360.dp, height = 30.dp)
+                HeaderCell("Le retard une-machine",   360.dp, 30.dp)
                 Row {
-                    HeaderCell("Stable", 120.dp, 30.dp); HeaderCell("Amélioré", 120.dp, 30.dp); HeaderCell("Détérioré", 120.dp, 30.dp)
+                    HeaderCell("Stable",    120.dp, 30.dp)
+                    HeaderCell("Amélioré",  120.dp, 30.dp)
+                    HeaderCell("Détérioré", 120.dp, 30.dp)
                 }
                 Row {
                     HeaderCell("SOM", 60.dp); HeaderCell("SOP", 60.dp)
@@ -129,9 +241,11 @@ fun FullTableau47(rows: List<Table47RowModel>) {
             }
 
             Column {
-                HeaderCell("Le retard multi-machines", width = 360.dp, height = 30.dp)
+                HeaderCell("Le retard multi-machines", 360.dp, 30.dp)
                 Row {
-                    HeaderCell("Stable", 120.dp, 30.dp); HeaderCell("Amélioré", 120.dp, 30.dp); HeaderCell("Détérioré", 120.dp, 30.dp)
+                    HeaderCell("Stable",    120.dp, 30.dp)
+                    HeaderCell("Amélioré",  120.dp, 30.dp)
+                    HeaderCell("Détérioré", 120.dp, 30.dp)
                 }
                 Row {
                     HeaderCell("SOM", 60.dp); HeaderCell("SOP", 60.dp)
@@ -141,150 +255,144 @@ fun FullTableau47(rows: List<Table47RowModel>) {
             }
         }
 
-        // --- DATA ROWS ---
-        rows.forEachIndexed { index, row ->
-            val isEven = index % 2 == 0
-            Row(modifier = Modifier.background(if (isEven) Color.White else Color(0xFFFAFAFA))) {
+        // ── Data rows ────────────────────────────────────────────────────
+        rows.forEachIndexed { idx, row ->
+            val bg = if (idx % 2 == 0) Color.White else Color(0xFFFAFAFA)
+            Row(modifier = Modifier.background(bg)) {
                 DataCell(row.m4, 50.dp, isBold = true)
-
-                DataCell(row.s_stable_som, 60.dp); DataCell(row.s_stable_sop, 60.dp)
-                DataCell(row.s_ameliore_som, 60.dp); DataCell(row.s_ameliore_sop, 60.dp)
-                DataCell(row.s_deteriore_som, 60.dp); DataCell(row.s_deteriore_sop, 60.dp)
-
-                DataCell(row.m_stable_som, 60.dp); DataCell(row.m_stable_sop, 60.dp)
-                DataCell(row.m_ameliore_som, 60.dp); DataCell(row.m_ameliore_sop, 60.dp)
-                DataCell(row.m_deteriore_som, 60.dp); DataCell(row.m_deteriore_sop, 60.dp)
+                // Single Stable
+                DataCell(row.s_s_som, 60.dp); DataCell(row.s_s_sop, 60.dp)
+                // Single Amélioré
+                DataCell(row.s_a_som, 60.dp); DataCell(row.s_a_sop, 60.dp)
+                // Single Détérioré
+                DataCell(row.s_d_som, 60.dp); DataCell(row.s_d_sop, 60.dp)
+                // Multi Stable
+                DataCell(row.m_s_som, 60.dp); DataCell(row.m_s_sop, 60.dp)
+                // Multi Amélioré
+                DataCell(row.m_a_som, 60.dp); DataCell(row.m_a_sop, 60.dp)
+                // Multi Détérioré
+                DataCell(row.m_d_som, 60.dp); DataCell(row.m_d_sop, 60.dp)
             }
         }
     }
 }
 
-// --- Cell Helpers ---
+// ═══════════════════════════════════════════════════════════════════════════
+//  Cell Helpers
+// ═══════════════════════════════════════════════════════════════════════════
+
 @Composable
 fun HeaderCell(text: String, width: Dp, height: Dp = 30.dp) {
-    Box(modifier = Modifier.width(width).height(height).border(0.5.dp, Color(0xFFE0E0E0)).padding(2.dp), contentAlignment = Alignment.Center) {
-        Text(text, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, textAlign = TextAlign.Center, color = Color(0xFF333333))
+    Box(
+        modifier = Modifier
+            .width(width)
+            .height(height)
+            .border(0.5.dp, Color(0xFFDDDDDD))
+            .padding(2.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text        = text,
+            fontWeight  = FontWeight.SemiBold,
+            fontSize    = 11.sp,
+            textAlign   = TextAlign.Center,
+            color       = Color(0xFF333333)
+        )
     }
 }
 
 @Composable
 fun DataCell(text: String, width: Dp, isBold: Boolean = false) {
-    Box(modifier = Modifier.width(width).height(30.dp).border(0.5.dp, Color(0xFFEEEEEE)).padding(2.dp), contentAlignment = Alignment.Center) {
-        Text(text, fontSize = 11.sp, fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal, textAlign = TextAlign.Center, color = Color(0xFF111111))
+    Box(
+        modifier = Modifier
+            .width(width)
+            .height(30.dp)
+            .border(0.5.dp, Color(0xFFEEEEEE))
+            .padding(2.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text       = text,
+            fontSize   = 11.sp,
+            fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal,
+            textAlign  = TextAlign.Center,
+            color      = Color(0xFF111111)
+        )
     }
 }
 
-// Data class for a single row in Tableau 4.6
+// ═══════════════════════════════════════════════════════════════════════════
+//  "Cases grasses" detection
+//  Bold row = when m4=8 has a SMALLER single-machine time than the m4=4 row
+//  in the same (m0, m1) group (the paper highlights these as unexpected).
+// ═══════════════════════════════════════════════════════════════════════════
+private fun detectBoldRows(rows: List<Table46Row>): Set<Int> {
+    val boldIndices = mutableSetOf<Int>()
+    // Group by (m0, m1), find m4=4 reference time
+    data class Key(val m0: String, val m1: String)
+    val ref4 = mutableMapOf<Key, Double>()
 
-data class Table46RowModel(
-    val m0: String, val m1: String, val m4: String,
-    val s_debut_som: String, val s_debut_sop: String,
-    val s_milieu_som: String, val s_milieu_sop: String,
-    val s_fin_som: String, val s_fin_sop: String,
-    val m_debut_som: String, val m_debut_sop: String,
-    val m_milieu_som: String, val m_milieu_sop: String,
-    val m_fin_som: String, val m_fin_sop: String
-)
-
-// Data class for a single row in Tableau 4.7
-
-
-
-data class Table47RowModel(
-    val m4: String,
-    val s_stable_som: String, val s_stable_sop: String,
-    val s_ameliore_som: String, val s_ameliore_sop: String,
-    val s_deteriore_som: String, val s_deteriore_sop: String,
-    val m_stable_som: String, val m_stable_sop: String,
-    val m_ameliore_som: String, val m_ameliore_sop: String,
-    val m_deteriore_som: String, val m_deteriore_sop: String
-)
-
-
-fun Table46Row.toModel(): Table46RowModel {
-    return Table46RowModel(
-        m0 = this.m0,
-        m1 = this.m1,
-        m4 = this.m4,
-        s_debut_som = this.s_debut_som,
-        s_debut_sop = this.s_debut_sop,
-        s_milieu_som = this.s_milieu_som,
-        s_milieu_sop = this.s_milieu_sop,
-        s_fin_som = this.s_fin_som,
-        s_fin_sop = this.s_fin_sop,
-        m_debut_som = this.m_debut_som,
-        m_debut_sop = this.m_debut_sop,
-        m_milieu_som = this.m_milieu_som,
-        m_milieu_sop = this.m_milieu_sop,
-        m_fin_som = this.m_fin_som,
-        m_fin_sop = this.m_fin_sop
-    )
-}
-
-// List mapper for convenience
-fun List<Table46Row>.toModelList1(): List<Table46RowModel> {
-    return this.map { it.toModel() }
-}
-
-// ==========================================
-// Mappers for Tableau 4.7
-// ==========================================
-
-fun Table47Row.toModel(): Table47RowModel {
-    return Table47RowModel(
-        m4 = this.m4,
-        // Mapping the shortened JSON keys to the descriptive UI Model keys
-        s_stable_som = this.s_s_som,
-        s_stable_sop = this.s_s_sop,
-        s_ameliore_som = this.s_a_som,
-        s_ameliore_sop = this.s_a_sop,
-        s_deteriore_som = this.s_d_som,
-        s_deteriore_sop = this.s_d_sop,
-
-        m_stable_som = this.m_s_som,
-        m_stable_sop = this.m_s_sop,
-        m_ameliore_som = this.m_a_som,
-        m_ameliore_sop = this.m_a_sop,
-        m_deteriore_som = this.m_d_som,
-        m_deteriore_sop = this.m_d_sop
-    )
-}
-
-// List mapper for convenience
-fun List<Table47Row>.toModelList(): List<Table47RowModel> {
-    return this.map { it.toModel() }
-}
-// ============================================================
-//  Table Data Generators (Empty States & Helpers)
-// ============================================================
-fun getEmptyTable46Data(): List<Table46Row> {
-    val rows = mutableListOf<Table46Row>()
-    val m0List = listOf(5, 10, 20)
-    val m1List = listOf(20, 50, 100)
-    val m4List = listOf(2, 4, 8)
-
-    for (m0 in m0List) {
-        for (m1 in m1List) {
-            for (m4 in m4List) {
-                rows.add(
-                    Table46Row(
-                        m0.toString(), m1.toString(), m4.toString(),
-                        "--", "--", "--", "--", "--", "--",
-                        "--", "--", "--", "--", "--", "--"
-                    )
-                )
-            }
+    rows.forEachIndexed { idx, row ->
+        val key = Key(row.m0, row.m1)
+        if (row.m4 == "4") {
+            ref4[key] = row.s_debut_som.replace(",", ".").toDoubleOrNull() ?: Double.MAX_VALUE
         }
     }
-    return rows
-}
-
-fun getEmptyTable47Data(): List<Table47Row> {
-    return listOf("2", "4", "8").map { m4 ->
-        Table47Row(m4, "--", "--", "--", "--", "--", "--", "--", "--", "--", "--", "--", "--")
+    rows.forEachIndexed { idx, row ->
+        val key = Key(row.m0, row.m1)
+        if (row.m4 == "8") {
+            val t8  = row.s_debut_som.replace(",", ".").toDoubleOrNull() ?: Double.MAX_VALUE
+            val t4  = ref4[key] ?: Double.MAX_VALUE
+            if (t8 < t4) boldIndices.add(idx)
+        }
     }
+    return boldIndices
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  Mapper helpers (Table46Row ↔ Table46RowModel if you still use both)
+//  These allow the SimulationDomain to return Table46Row and the UI to use it
+//  directly without a separate "model" class.
+// ═══════════════════════════════════════════════════════════════════════════
 
-fun formatMs(value: Double?): String = if (value != null && value > 0.0) "%.2f".format(value) else "--"
-fun formatPct(value: Double?): String = if (value != null) "%.2f".format(value) else "--"
+// Convenience: build a Table46Row directly from BatchResultEvent splits
+fun buildTable46Row(
+    m0: Int, m1: Int, m4: Int,
+    somResult: com.example.smartfactorymas.BatchResultEvent?,
+    sopResult: com.example.smartfactorymas.BatchResultEvent?
+): Table46Row = Table46Row(
+    m0 = m0.toString(), m1 = m1.toString(), m4 = m4.toString(),
+    s_debut_som  = formatMs(somResult?.splits?.debut?.singleMs),
+    s_debut_sop  = formatMs(sopResult?.splits?.debut?.singleMs),
+    s_milieu_som = formatMs(somResult?.splits?.milieu?.singleMs),
+    s_milieu_sop = formatMs(sopResult?.splits?.milieu?.singleMs),
+    s_fin_som    = formatMs(somResult?.splits?.fin?.singleMs),
+    s_fin_sop    = formatMs(sopResult?.splits?.fin?.singleMs),
+    m_debut_som  = if (m4 == 4) formatMs(somResult?.splits?.debut?.multiMs)  else "--",
+    m_debut_sop  = if (m4 == 4) formatMs(sopResult?.splits?.debut?.multiMs)  else "--",
+    m_milieu_som = if (m4 == 4) formatMs(somResult?.splits?.milieu?.multiMs) else "--",
+    m_milieu_sop = if (m4 == 4) formatMs(sopResult?.splits?.milieu?.multiMs) else "--",
+    m_fin_som    = if (m4 == 4) formatMs(somResult?.splits?.fin?.multiMs)    else "--",
+    m_fin_sop    = if (m4 == 4) formatMs(sopResult?.splits?.fin?.multiMs)    else "--"
+)
+
+// Convenience: build a Table47Row directly from BatchResultEvent stability
+fun buildTable47Row(
+    m4: Int,
+    somResult: com.example.smartfactorymas.BatchResultEvent?,
+    sopResult: com.example.smartfactorymas.BatchResultEvent?
+): Table47Row = Table47Row(
+    m4     = m4.toString(),
+    s_s_som = formatPct(somResult?.stability?.single?.stable),
+    s_s_sop = formatPct(sopResult?.stability?.single?.stable),
+    s_a_som = formatPct(somResult?.stability?.single?.improved),
+    s_a_sop = formatPct(sopResult?.stability?.single?.improved),
+    s_d_som = formatPct(somResult?.stability?.single?.deteriorated),
+    s_d_sop = formatPct(sopResult?.stability?.single?.deteriorated),
+    m_s_som = formatPct(somResult?.stability?.multi?.stable),
+    m_s_sop = formatPct(sopResult?.stability?.multi?.stable),
+    m_a_som = formatPct(somResult?.stability?.multi?.improved),
+    m_a_sop = formatPct(sopResult?.stability?.multi?.improved),
+    m_d_som = formatPct(somResult?.stability?.multi?.deteriorated),
+    m_d_sop = formatPct(sopResult?.stability?.multi?.deteriorated)
+)

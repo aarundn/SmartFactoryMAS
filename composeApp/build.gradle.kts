@@ -10,7 +10,7 @@ plugins {
 
 kotlin {
     jvm()
-    
+
     sourceSets {
         commonMain.dependencies {
             implementation(libs.compose.runtime)
@@ -40,11 +40,16 @@ compose.desktop {
     application {
         mainClass = "com.example.smartfactorymas.MainKt"
 
-        nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "SmartFactoryMAS"
-            packageVersion = "1.0.0"
-            appResourcesRootDir.set(project.layout.projectDirectory.dir("appResources"))
+        // 🌟 ADD THIS BLOCK RIGHT HERE TO FIX THE BUILD ERROR 🌟
+        buildTypes.release.proguard {
+            isEnabled.set(false)
+
+            nativeDistributions {
+                targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+                packageName = "SmartFactoryMAS"
+                packageVersion = "1.0.0"
+                appResourcesRootDir.set(project.layout.projectDirectory.dir("appResources"))
+            }
         }
     }
 }
