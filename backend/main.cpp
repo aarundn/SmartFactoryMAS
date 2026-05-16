@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <sstream>
+#include <algorithm>
 #include "FuzzyNumber.h"
 #include "DataStructures.h"
 #include "AMC.h"
@@ -14,7 +15,7 @@
 #include "BatchSimulator.h"
 #include "BenchmarkRunner.h"
 
-
+// ── Format Helpers ────────────────────────────────────────────────────────────
 static std::string fMs(double v) {
     if(v <= 0.01) return "\"--\"";
     char buf[32]; snprintf(buf, sizeof(buf), "\"%.2f\"", v);
@@ -24,7 +25,8 @@ static std::string fPct(double v) {
     char buf[32]; snprintf(buf, sizeof(buf), "\"%d%%\"", (int)v);
     return std::string(buf);
 }
-// ── Minimal JSON helpers ──────────────────────────────────────────────────────
+
+// ── JSON Extractors ───────────────────────────────────────────────────────────
 static double getNum(const std::string& json, const std::string& key) {
     auto pos = json.find("\"" + key + "\"");
     if (pos == std::string::npos) return -1;
@@ -59,6 +61,7 @@ static std::vector<std::string> splitArray(const std::string& json, const std::s
     return items;
 }
 
+// ── Multi-Machine Parsers ─────────────────────────────────────────────────────
 static std::vector<ScheduleBlock> parseNeighborSchedule(const std::string& json, const std::string& key) {
     std::vector<ScheduleBlock> schedule;
     for (const auto& item : splitArray(json, key)) {
@@ -102,28 +105,21 @@ static AMV* buildAMV(const std::string& json) {
     return amv;
 }
 
-// ── Serialise a StabilityMetrics block into JSON ──────────────────────────────
 static std::string stabilityJson(const StabilityMetrics& m) {
     std::ostringstream j;
-    j << std::fixed
-      << "{\"stable\":"      << m.stable_percent
-      << ",\"improved\":"    << m.improved_percent
-      << ",\"deteriorated\":" << m.deteriorated_percent
-      << "}";
+    j << std::fixed << "{\"stable\":" << m.stable_percent << ",\"improved\":" << m.improved_percent << ",\"deteriorated\":" << m.deteriorated_percent << "}";
     return j.str();
 }
 
-// ── Serialise a SplitMetrics block into JSON ──────────────────────────────────
 static std::string splitJson(const SplitMetrics& s) {
     std::ostringstream j;
-    j << std::fixed
-      << "{\"single_ms\":" << s.single_ms
-      << ",\"multi_ms\":"  << s.multi_ms
-      << "}";
+    j << std::fixed << "{\"single_ms\":" << s.single_ms << ",\"multi_ms\":"  << s.multi_ms << "}";
     return j.str();
 }
 
-// ── Entry point ───────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// MAIN ENTRY POINT
+// ══════════════════════════════════════════════════════════════════════════════
 int main() {
     std::string input;
     std::ostringstream buf;
@@ -140,23 +136,7 @@ int main() {
     std::string mode = getStr(input, "mode");
     if (mode.empty()) mode = "single";
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // BENCHMARK MODE
-    // ══════════════════════════════════════════════════════════════════════════
-    if (mode == "benchmark") {
-        std::string outputDir = getStr(input, "output_dir");
-        if (outputDir.empty()) outputDir = "./benchmark_results/";
-        try {
-            BenchmarkRunner::runCompleteBenchmark(outputDir);
-            std::cout << "{\"type\":\"benchmark_complete\",\"status\":\"success\"}"
-                      << std::endl;
-        } catch (...) { return 1; }
-        return 0;
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // BATCH MODE  →  Tableau 4.6 & 4.7
-    // ══════════════════════════════════════════════════════════════════════════
+    // ── ROUTE 1: BATCH MODE (Required for UI Dashboard & Loops) ───────────────
     if (mode == "batch") {
         BatchParams params;
         params.num_machines  = static_cast<int>(getNum(input, "machines"));
@@ -168,57 +148,35 @@ int main() {
 
         BatchSimulationResult result = BatchSimulator::runBatch(params);
 
-        // ── Build the JSON response ─────────────────────────────────────────
         std::ostringstream json;
-        json << std::fixed;
-
-        json << "{\"type\":\"batch_result\"";
-
-        // stability — nested (single + multi) for Tableau 4.7
-        json << ",\"stability\":{"
-             << "\"single\":" << stabilityJson(result.stability_index.single_machine)
-             << ",\"multi\":"  << stabilityJson(result.stability_index.multi_machine)
-             << "}";
-
-        // recommendation
-        json << ",\"recommendation\":\"" << result.ai_recommendation << "\"";
-
-        // reactivity array — for line chart
-        json << ",\"reactivity\":[";
+        json << std::fixed << "{\"type\":\"batch_result\""
+             << ",\"stability\":{\"single\":" << stabilityJson(result.stability_index.single_machine)
+             << ",\"multi\":" << stabilityJson(result.stability_index.multi_machine) << "}"
+             << ",\"recommendation\":\"" << result.ai_recommendation << "\""
+             << ",\"reactivity\":[";
         for (size_t i = 0; i < result.reactivity_chart_data.size(); ++i) {
             const auto& d = result.reactivity_chart_data[i];
             if (i > 0) json << ",";
-            json << "{\"jobs\":"      << d.num_jobs
-                 << ",\"single_ms\":" << d.single_machine_time_ms
-                 << ",\"multi_ms\":"  << d.multi_machine_time_ms
-                 << "}";
+            json << "{\"jobs\":" << d.num_jobs << ",\"single_ms\":" << d.single_machine_time_ms << ",\"multi_ms\":"  << d.multi_machine_time_ms << "}";
         }
-        json << "]";
+        json << "],\"splits\":{\"debut\":" << splitJson(result.debut_splits) << ",\"milieu\":" << splitJson(result.milieu_splits) << ",\"fin\":" << splitJson(result.fin_splits) << "}";
 
-        // splits — averages per anomaly position for Tableau 4.6
-        json << ",\"splits\":{"
-             << "\"debut\":"  << splitJson(result.debut_splits)  << ","
-             << "\"milieu\":" << splitJson(result.milieu_splits) << ","
-             << "\"fin\":"    << splitJson(result.fin_splits)
-             << "}";
-
-        // csv_data — escape newlines for safe embedding in JSON string
         std::string safeCsv = result.csv_export_data;
         for (size_t p = 0; (p = safeCsv.find('\n', p)) != std::string::npos; p += 2)
             safeCsv.replace(p, 1, "\\n");
 
-        json << ",\"csv_data\":\"" << safeCsv << "\"";
-
-        json << "}";
+        json << ",\"csv_data\":\"" << safeCsv << "\"}";
 
         std::cout << json.str() << std::endl;
         return 0;
     }
+
+    // ── ROUTE 2: ACADEMIC BENCHMARK MODE (All-in-one run) ─────────────────────
     if (mode == "academic_benchmark") {
         std::ostringstream json;
         json << "{\"type\":\"academic_benchmark\",";
 
-        // --- Generate Table 4.6 ---
+        // --- Table 4.6 ---
         json << "\"table46\":[";
         std::vector<int> m0s = {5, 10, 20};
         std::vector<int> m1s = {20, 50, 100};
@@ -236,28 +194,19 @@ int main() {
                     if (!first46) json << ",";
                     first46 = false;
 
-                    json << "{"
-                         << "\"m0\":\"" << m0 << "\",\"m1\":\"" << m1 << "\",\"m4\":\"" << m4
-                         << "\","
-                         << "\"s_debut_som\":" << fMs(som.debut_splits.single_ms) << ","
-                         << "\"s_debut_sop\":" << fMs(sop.debut_splits.single_ms) << ","
-                         << "\"s_milieu_som\":" << fMs(som.milieu_splits.single_ms) << ","
-                         << "\"s_milieu_sop\":" << fMs(sop.milieu_splits.single_ms) << ","
-                         << "\"s_fin_som\":" << fMs(som.fin_splits.single_ms) << ","
-                         << "\"s_fin_sop\":" << fMs(sop.fin_splits.single_ms) << ","
-                         << "\"m_debut_som\":" << fMs(som.debut_splits.multi_ms) << ","
-                         << "\"m_debut_sop\":" << fMs(sop.debut_splits.multi_ms) << ","
-                         << "\"m_milieu_som\":" << fMs(som.milieu_splits.multi_ms) << ","
-                         << "\"m_milieu_sop\":" << fMs(sop.milieu_splits.multi_ms) << ","
-                         << "\"m_fin_som\":" << fMs(som.fin_splits.multi_ms) << ","
-                         << "\"m_fin_sop\":" << fMs(sop.fin_splits.multi_ms)
-                         << "}";
+                    json << "{\"m0\":\"" << m0 << "\",\"m1\":\"" << m1 << "\",\"m4\":\"" << m4 << "\","
+                         << "\"s_debut_som\":" << fMs(som.debut_splits.single_ms) << ",\"s_debut_sop\":" << fMs(sop.debut_splits.single_ms) << ","
+                         << "\"s_milieu_som\":" << fMs(som.milieu_splits.single_ms) << ",\"s_milieu_sop\":" << fMs(sop.milieu_splits.single_ms) << ","
+                         << "\"s_fin_som\":" << fMs(som.fin_splits.single_ms) << ",\"s_fin_sop\":" << fMs(sop.fin_splits.single_ms) << ","
+                         << "\"m_debut_som\":" << fMs(som.debut_splits.multi_ms) << ",\"m_debut_sop\":" << fMs(sop.debut_splits.multi_ms) << ","
+                         << "\"m_milieu_som\":" << fMs(som.milieu_splits.multi_ms) << ",\"m_milieu_sop\":" << fMs(sop.milieu_splits.multi_ms) << ","
+                         << "\"m_fin_som\":" << fMs(som.fin_splits.multi_ms) << ",\"m_fin_sop\":" << fMs(sop.fin_splits.multi_ms) << "}";
                 }
             }
         }
         json << "],";
 
-        // --- Generate Table 4.7 ---
+        // --- Table 4.7 ---
         json << "\"table47\":[";
         bool first47 = true;
         for (int m4: m4s) {
@@ -269,37 +218,21 @@ int main() {
             if (!first47) json << ",";
             first47 = false;
 
-            json << "{"
-                 << "\"m4\":\"" << m4 << "\","
-                 << "\"s_s_som\":" << fPct(som.stability_index.single_machine.stable_percent) << ","
-                 << "\"s_s_sop\":" << fPct(sop.stability_index.single_machine.stable_percent) << ","
-                 << "\"s_a_som\":" << fPct(som.stability_index.single_machine.improved_percent)
-                 << ","
-                 << "\"s_a_sop\":" << fPct(sop.stability_index.single_machine.improved_percent)
-                 << ","
-                 << "\"s_d_som\":" << fPct(som.stability_index.single_machine.deteriorated_percent)
-                 << ","
-                 << "\"s_d_sop\":" << fPct(sop.stability_index.single_machine.deteriorated_percent)
-                 << ","
-                 << "\"m_s_som\":" << fPct(som.stability_index.multi_machine.stable_percent) << ","
-                 << "\"m_s_sop\":" << fPct(sop.stability_index.multi_machine.stable_percent) << ","
-                 << "\"m_a_som\":" << fPct(som.stability_index.multi_machine.improved_percent)
-                 << ","
-                 << "\"m_a_sop\":" << fPct(sop.stability_index.multi_machine.improved_percent)
-                 << ","
-                 << "\"m_d_som\":" << fPct(som.stability_index.multi_machine.deteriorated_percent)
-                 << ","
-                 << "\"m_d_sop\":" << fPct(sop.stability_index.multi_machine.deteriorated_percent)
-                 << "}";
+            json << "{\"m4\":\"" << m4 << "\","
+                 << "\"s_s_som\":" << fPct(som.stability_index.single_machine.stable_percent) << ",\"s_s_sop\":" << fPct(sop.stability_index.single_machine.stable_percent) << ","
+                 << "\"s_a_som\":" << fPct(som.stability_index.single_machine.improved_percent) << ",\"s_a_sop\":" << fPct(sop.stability_index.single_machine.improved_percent) << ","
+                 << "\"s_d_som\":" << fPct(som.stability_index.single_machine.deteriorated_percent) << ",\"s_d_sop\":" << fPct(sop.stability_index.single_machine.deteriorated_percent) << ","
+                 << "\"m_s_som\":" << fPct(som.stability_index.multi_machine.stable_percent) << ",\"m_s_sop\":" << fPct(sop.stability_index.multi_machine.stable_percent) << ","
+                 << "\"m_a_som\":" << fPct(som.stability_index.multi_machine.improved_percent) << ",\"m_a_sop\":" << fPct(sop.stability_index.multi_machine.improved_percent) << ","
+                 << "\"m_d_som\":" << fPct(som.stability_index.multi_machine.deteriorated_percent) << ",\"m_d_sop\":" << fPct(sop.stability_index.multi_machine.deteriorated_percent) << "}";
         }
         json << "]}";
 
         std::cout << json.str() << std::endl;
         return 0;
     }
-    // ══════════════════════════════════════════════════════════════════════════
-    // SINGLE / MULTI MODE
-    // ══════════════════════════════════════════════════════════════════════════
+
+    // ── ROUTE 3: SINGLE/MULTI MODE (Required for UI Gantt Charts) ─────────────
     double alertTime       = getNum(input, "alert_time");
     double schedulingStart = getNum(input, "scheduling_start");
     double w1              = getNum(input, "w1");
@@ -322,8 +255,7 @@ int main() {
         ARH arh;
         arh.id             = getStr(ai, "id");
         arh.availabilities = {{getNum(ai, "avail_start"), getNum(ai, "avail_end")}};
-        arh.repairDuration = FuzzyNumber(
-                getNum(ai, "dur_min"), getNum(ai, "dur_prob"), getNum(ai, "dur_max"));
+        arh.repairDuration = FuzzyNumber(getNum(ai, "dur_min"), getNum(ai, "dur_prob"), getNum(ai, "dur_max"));
         arh.competencies   = {"Mechanical"};
         arhList.push_back(arh);
     }
@@ -338,14 +270,11 @@ int main() {
     if (mode == "multi") {
         ama = buildAMA(input);
         amv = buildAMV(input);
-        if (ama && amv)
-            ams.setNeighbors(ama, amv);
-        else
-            mode = "single";
+        if (ama && amv) ams.setNeighbors(ama, amv);
+        else mode = "single";
     }
 
-    ams.handleAnomaly(schedulingStart, jobs, tbmBlocks,
-            strategy, rulMin, rulProb, rulMax, mode);
+    ams.handleAnomaly(schedulingStart, jobs, tbmBlocks, strategy, rulMin, rulProb, rulMax, mode);
 
     delete ama;
     delete amv;

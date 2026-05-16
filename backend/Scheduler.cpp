@@ -10,7 +10,9 @@ std::vector<ScheduleBlock> Scheduler::buildSchedule(
 {
     std::vector<ScheduleBlock> schedule;
 
-    // 1. ADD FIXED BLOCKS FIRST (These cannot move!)
+    // 1. ADD FIXED BLOCKS FIRST (Maintenance cannot move)
+    if (cbmStart >= 0.0) {
+
     ScheduleBlock cbm;
     cbm.id = "CBM";
     cbm.type = "CBM";
@@ -18,7 +20,7 @@ std::vector<ScheduleBlock> Scheduler::buildSchedule(
     cbm.end = cbm.start + cbmDuration;
     cbm.dueDate = 0.0;
     schedule.push_back(cbm);
-
+    }
     for(const auto& tbm : tbmBlocks) {
         ScheduleBlock b;
         b.id = tbm.id;
@@ -29,40 +31,37 @@ std::vector<ScheduleBlock> Scheduler::buildSchedule(
         schedule.push_back(b);
     }
 
-    // 2. INSERT PRODUCTION JOBS AROUND FIXED BLOCKS
-    FuzzyNumber cursor(schedulingStart, schedulingStart, schedulingStart);
-
+    // 2. INSERT PRODUCTION JOBS (Earliest Available Gap Algorithm)
     for(const auto& job : jobs) {
+        // Start searching from the very beginning for EVERY job
+        FuzzyNumber testCursor(schedulingStart, schedulingStart, schedulingStart);
         bool collision;
+
         do {
             collision = false;
-            FuzzyNumber currentEnd = cursor + FuzzyNumber(job.duration, job.duration, job.duration);
+            FuzzyNumber testEnd = testCursor + FuzzyNumber(job.duration, job.duration, job.duration);
 
-            for(const auto& fixed : schedule) {
-                if (fixed.type != "PRODUCTION") {
-                    // If the production job overlaps with a fixed maintenance block
-                    if (cursor.prob < fixed.end.prob && currentEnd.prob > fixed.start.prob) {
-                        collision = true;
-                        cursor = fixed.end; // Force the job to wait until maintenance finishes!
-                        break;
-                    }
+            // Check for collisions against ALL placed blocks (Maintenance AND Production)
+            for(const auto& blk : schedule) {
+                if (testCursor.prob < blk.end.prob && testEnd.prob > blk.start.prob) {
+                    collision = true;
+                    testCursor = blk.end; // Jump to the end of the block we hit and try again
+                    break;
                 }
             }
         } while(collision);
 
-        // Place the job at the safely calculated cursor
+        // testCursor has successfully found the earliest free gap! Place the job here.
         ScheduleBlock pj;
         pj.id = job.id;
         pj.type = "PRODUCTION";
-        pj.start = cursor;
-        pj.end = cursor + FuzzyNumber(job.duration, job.duration, job.duration);
+        pj.start = testCursor;
+        pj.end = testCursor + FuzzyNumber(job.duration, job.duration, job.duration);
         pj.dueDate = job.dueDate;
         schedule.push_back(pj);
-
-        cursor = pj.end; // Move cursor to the end of this newly placed job
     }
 
-    // 3. SORT CHRONOLOGICALLY FOR CLEAN UI OUTPUT
+    // 3. SORT CHRONOLOGICALLY FOR CLEAN UI GANTT CHART OUTPUT
     std::sort(schedule.begin(), schedule.end(), [](const auto& a, const auto& b){
         return a.start.prob < b.start.prob;
     });

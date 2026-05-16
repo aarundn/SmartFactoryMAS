@@ -135,8 +135,10 @@ public:
 
             // If both windows are empty (edge-case for very short horizons),
             // fall back to a safe full-horizon window so we never crash.
-            if (arh.availabilities.empty())
-                arh.availabilities.push_back({0.0, scheduleLength});
+            if (arh.availabilities.empty()) {
+                double safeStart = u01(rng) * (scheduleLength * 0.8);
+                arh.availabilities.push_back({safeStart, safeStart + (scheduleLength * 0.2)});
+            }
 
             arhs.push_back(arh);
             cursor += TRH;

@@ -11,6 +11,7 @@
 #include <limits>
 #include <sstream>
 #include <algorithm>
+#include <map>
 
 class AMS {
 public:
@@ -18,87 +19,92 @@ public:
     ASRH* asrh;
     double alertTime, w1, w2;
 
-    // Optional neighbors — null in single-machine mode
     AMA* ama = nullptr;
     AMV* amv = nullptr;
 
     AMS(AMC* a, ASRH* s, double alert, double w1, double w2)
             : amc(a), asrh(s), alertTime(alert), w1(w1), w2(w2) {}
 
-    // Attach neighbors to enable multi-machine phase
     void setNeighbors(AMA* upstream, AMV* downstream) {
         ama = upstream;
         amv = downstream;
     }
 
-    // ── Main entry point — reacts to mode from UI tab ────────────────────────
     std::vector<CBMProposal> handleAnomaly(
             double schedulingStart,
             const std::vector<ProductionJob>& jobs,
             const std::vector<TBMBlock>& tbmBlocks,
             std::string strategy,
             double rulMin, double rulProb, double rulMax,
-            std::string mode = "single")   // "single" or "multi" from UI
+            std::string mode = "single")
     {
-        // ── PHASE 1: Single-machine (always runs) ────────────────────────────
         jsonLog("AMS", "=== Phase 1: Single-Machine Scheduling ===");
-        jsonLog("AMS", "Anomaly at t=" + std::to_string((int)alertTime)
-                + " | Mode: " + mode);
+        jsonLog("AMS", "Anomaly at t=" + std::to_string((int)alertTime) + " | Mode: " + mode);
 
         DiagnosticResult diag = amc->analyzeAnomaly(alertTime, rulMin, rulProb, rulMax);
-        auto proposals = asrh->callForProposals(
-                diag, strategy, alertTime, schedulingStart, tbmBlocks);
+        auto allProposals = asrh->callForProposals(diag, strategy, alertTime, schedulingStart, tbmBlocks);
 
-        if (proposals.empty()) {
+        if (allProposals.empty()) {
             jsonLog("AMS", "ERROR: No valid proposals. System Abort.", "error");
             emitResultJson({}, "NONE");
             return {};
         }
 
-        CBMProposal* best = nullptr;
-        for (auto& prop : proposals) {
+        // Evaluate all Early/Late proposals
+        for (auto& prop : allProposals) {
             evaluate(prop, schedulingStart, jobs, tbmBlocks);
+        }
+
+        // 🌟 FIX 2: Filter to keep only the BEST proposal per Technician 🌟
+        std::map<std::string, CBMProposal> bestPerARH;
+        for (const auto& prop : allProposals) {
+            if (bestPerARH.find(prop.arhId) == bestPerARH.end() || prop.f.prob < bestPerARH[prop.arhId].f.prob) {
+                bestPerARH[prop.arhId] = prop;
+            }
+        }
+
+        std::vector<CBMProposal> finalProposals;
+        CBMProposal* best = nullptr;
+
+        for (auto& pair : bestPerARH) {
+            finalProposals.push_back(pair.second);
+        }
+
+        for (auto& prop : finalProposals) {
             if (!best || prop.f.prob < best->f.prob) best = &prop;
         }
 
         jsonLog("AMS", "SELECTED: " + best->arhId + " | f=" + best->f.str());
         asrh->confirm(best->arhId);
-        emitResultJson(proposals, best->arhId);
+        emitResultJson(finalProposals, best->arhId); // Emit only the clean, filtered list
 
-        // ── PHASE 2: Multi-machine (only if UI tab = "multi") ────────────────
         if (mode == "multi") {
             if (ama != nullptr && amv != nullptr) {
                 jsonLog("AMS", "=== Phase 2: Multi-Machine Negotiation ===");
                 MultiMachineCoordinator coordinator;
                 coordinator.negotiate(best->schedule, *ama, *amv);
             } else {
-                jsonLog("AMS",
-                        "Multi-machine mode requested but no neighbors configured. "
-                        "Add AMA and AMV in the UI.", "warn");
+                jsonLog("AMS", "Multi-machine mode requested but no neighbors configured.", "warn");
             }
         }
 
-        return proposals;
+        return finalProposals;
     }
 
 private:
-
     void evaluate(
             CBMProposal& prop,
             double schedulingStart,
             const std::vector<ProductionJob>& jobs,
             const std::vector<TBMBlock>& tbmBlocks)
     {
-        prop.tracks.push_back(Scheduler::buildSchedule(
-                schedulingStart, jobs, prop.cbmStart, prop.cbmDuration, tbmBlocks));
+        prop.tracks.push_back(Scheduler::buildSchedule(schedulingStart, jobs, prop.cbmStart, prop.cbmDuration, tbmBlocks));
 
         double bestTardiness = std::numeric_limits<double>::max();
         std::vector<ScheduleBlock> bestSchedule;
         auto perm = jobs;
 
-        // 🌟 المنطق الهجين الذكي (Smart Hybrid Logic) 🌟
         if (jobs.size() <= 8) {
-            // 1. إذا كان عدد المهام صغيراً (8 فأقل): استخدم التباديل للحل المثالي 100% (الوظائف القديمة)
             std::sort(perm.begin(), perm.end(), [](const auto& a, const auto& b){ return a.id < b.id; });
             do {
                 auto schedule = Scheduler::buildSchedule(schedulingStart, perm, prop.cbmStart, prop.cbmDuration, tbmBlocks);
@@ -113,7 +119,6 @@ private:
             } while (std::next_permutation(perm.begin(), perm.end(), [](const auto& a, const auto& b){ return a.id < b.id; }));
 
         } else {
-            // 2. إذا كان عدد المهام كبيراً (مثل Batch): استخدم EDD للسرعة الفائقة
             std::sort(perm.begin(), perm.end(), [](const auto& a, const auto& b){ return a.dueDate < b.dueDate; });
             bestSchedule = Scheduler::buildSchedule(schedulingStart, perm, prop.cbmStart, prop.cbmDuration, tbmBlocks);
         }
@@ -129,10 +134,14 @@ private:
                 jobCount++;
             }
         }
+
         prop.f1 = (jobCount > 0) ? sumDelay / jobCount : FuzzyNumber(0,0,0);
         double f2val = std::max(0.0, prop.cbmStart - alertTime);
         prop.f2 = FuzzyNumber(f2val, f2val, f2val);
-        prop.f  = (prop.f1 * w1) + (prop.f2 * w2);
+
+        // 🌟 FIX 1: Economic Multiplier to balance the scales! 🌟
+        double economicProductionMultiplier = 4.0;
+        prop.f  = (prop.f1 * (w1 * economicProductionMultiplier)) + (prop.f2 * w2);
 
         jsonLog("AMS", prop.arhId + " | f=" + prop.f.str());
     }
@@ -153,10 +162,7 @@ private:
         return j.str();
     }
 
-    void emitResultJson(
-            const std::vector<CBMProposal>& proposals,
-            const std::string& chosen)
-    {
+    void emitResultJson(const std::vector<CBMProposal>& proposals, const std::string& chosen) {
         std::ostringstream j;
         j << "{\"type\":\"result\",\"chosen_arh\":\"" << chosen
           << "\",\"w1\":" << w1 << ",\"w2\":" << w2
@@ -184,7 +190,6 @@ private:
         }
         j << "]}";
 
-        // 🌟 التعديل هنا: الطباعة فقط إذا لم نكن في وضع الصمت 🌟
         if (!g_silentMode) {
             std::cout << j.str() << std::endl;
         }
