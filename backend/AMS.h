@@ -140,8 +140,7 @@ private:
         prop.f2 = FuzzyNumber(f2val, f2val, f2val);
 
         // 🌟 FIX 1: Economic Multiplier to balance the scales! 🌟
-        double economicProductionMultiplier = 4.0;
-        prop.f  = (prop.f1 * (w1 * economicProductionMultiplier)) + (prop.f2 * w2);
+        prop.f  = (prop.f1 * w1 ) + (prop.f2 * w2);
 
         jsonLog("AMS", prop.arhId + " | f=" + prop.f.str());
     }
@@ -176,6 +175,9 @@ private:
               << ",\"cbm_dur_min\":" << prop.cbmDuration.min
               << ",\"cbm_dur_prob\":" << prop.cbmDuration.prob
               << ",\"cbm_dur_max\":" << prop.cbmDuration.max
+              << ",\"f2_min\":" << prop.f2.min
+              << ",\"f2_prob\":" << prop.f2.prob
+              << ",\"f2_max\":" << prop.f2.max
               << ",\"f1_min\":" << prop.f1.min << ",\"f1_prob\":" << prop.f1.prob
               << ",\"f1_max\":" << prop.f1.max << ",\"f2\":" << prop.f2.prob
               << ",\"f_min\":" << prop.f.min << ",\"f_prob\":" << prop.f.prob
