@@ -150,9 +150,13 @@ fun MainScreen() {
     fun applyStepState(step: Int, proposalIdx: Int = selectedProposal) {
         val initSched   = domain.calculateInitialSchedule(jobs, tbms, schedulingStart)
         val baseState   = ganttState.copy(currentStep = step)
-        val metricsState = if (baseState.masOutput != null && baseState.masOutput.proposals.isNotEmpty())
-            domain.buildResultState(proposalIdx, rulMin, rulMax, initSched, anomalyTime)
-        else baseState
+
+        // 🌟 THE FIX: Extract the metrics directly from the selected proposal! 🌟
+        val currentProp = baseState.masOutput?.proposals?.getOrNull(proposalIdx)
+        val currentF1 = (currentProp?.f1Prob ?: 0.0).toFloat()
+        val currentF2 = (currentProp?.f2 ?: 0.0).toFloat()
+        val currentF = (currentProp?.fProb ?: 0.0).toFloat()
+        val currentChosenArh = currentProp?.arhId ?: ""
 
         fun mapDto(dtos: List<ScheduleBlockDto>?) = dtos?.map { dto ->
             TaskBlock(dto.id,
@@ -168,29 +172,27 @@ fun MainScreen() {
             1 -> domain.buildAnomalyState(jobs, tbms, schedulingStart, anomalyTime, rulMin, rulMax)
                 .copy(currentStep = 1, masOutput = baseState.masOutput, logs = baseState.logs, multiMachineOutput = baseState.multiMachineOutput)
             2 -> {
-                val prop     = baseState.masOutput?.proposals?.getOrNull(proposalIdx)
                 val fixed    = initSched.filter { it.type == TaskType.TBM }.toMutableList()
-                val cbmDto   = prop?.tracks?.getOrNull(0)?.find { it.type == "CBM" || it.id == "CBM" }
+                val cbmDto   = currentProp?.tracks?.getOrNull(0)?.find { it.type == "CBM" || it.id == "CBM" }
                 if (cbmDto != null) fixed.add(TaskBlock(cbmDto.id, TaskType.CBM, cbmDto.startProb,
                     cbmDto.endProb - cbmDto.startProb, null, cbmDto.startMin, cbmDto.startMax, cbmDto.endMin, cbmDto.endMax))
                 baseState.copy(schedule = fixed, tracks = listOf(fixed),
-                    f1 = metricsState.f1, f2 = metricsState.f2, f = metricsState.f, chosenArh = metricsState.chosenArh)
+                    f1 = currentF1, f2 = currentF2, f = currentF, chosenArh = currentChosenArh)
             }
             3 -> {
-                val naive = mapDto(baseState.masOutput?.proposals?.getOrNull(proposalIdx)?.tracks?.getOrNull(0)) ?: initSched
+                val naive = mapDto(currentProp?.tracks?.getOrNull(0)) ?: initSched
                 baseState.copy(schedule = naive, tracks = listOf(naive),
-                    f1 = metricsState.f1, f2 = metricsState.f2, f = metricsState.f, chosenArh = metricsState.chosenArh)
+                    f1 = currentF1, f2 = currentF2, f = currentF, chosenArh = currentChosenArh)
             }
             4 -> {
-                val prop        = baseState.masOutput?.proposals?.getOrNull(proposalIdx)
                 val fixed       = initSched.filter { it.type == TaskType.TBM }.toMutableList()
-                val cbmDto      = prop?.tracks?.getOrNull(0)?.find { it.type == "CBM" || it.id == "CBM" }
+                val cbmDto      = currentProp?.tracks?.getOrNull(0)?.find { it.type == "CBM" || it.id == "CBM" }
                 if (cbmDto != null) fixed.add(TaskBlock(cbmDto.id, TaskType.CBM, cbmDto.startProb,
                     cbmDto.endProb - cbmDto.startProb, null, cbmDto.startMin, cbmDto.startMax, cbmDto.endMin, cbmDto.endMax))
-                val naive   = mapDto(prop?.tracks?.getOrNull(0)) ?: initSched
-                val optimal = mapDto(prop?.tracks?.getOrNull(1) ?: prop?.schedule) ?: initSched
+                val naive   = mapDto(currentProp?.tracks?.getOrNull(0)) ?: initSched
+                val optimal = mapDto(currentProp?.tracks?.getOrNull(1) ?: currentProp?.schedule) ?: initSched
                 baseState.copy(schedule = optimal, tracks = listOf(initSched, fixed, naive, optimal),
-                    f1 = metricsState.f1, f2 = metricsState.f2, f = metricsState.f, chosenArh = metricsState.chosenArh)
+                    f1 = currentF1, f2 = currentF2, f = currentF, chosenArh = currentChosenArh)
             }
             else -> baseState
         }
@@ -482,10 +484,9 @@ fun Sidebar(selectedTab: String, onTabSelect: (String) -> Unit) {
             .background(SurfaceContainerLow).border(1.dp, OutlineVariant)
             .padding(vertical = 24.dp)
     ) {
-        SidebarItem("Local", Icons.Default.Dashboard, selectedTab == "local") { onTabSelect("local") }
-        SidebarItem("Global", Icons.Default.AccountTree, selectedTab == "global") { onTabSelect("global") }
-        SidebarItem("Labs", Icons.Default.Science, selectedTab == "advanced_labs") { onTabSelect("advanced_labs") }
-        SidebarItem("Settings", Icons.Default.Settings, false) {}
+        SidebarItem("", Icons.Default.Dashboard, selectedTab == "local") { onTabSelect("local") }
+        SidebarItem("", Icons.Default.AccountTree, selectedTab == "global") { onTabSelect("global") }
+        SidebarItem("", Icons.Default.Science, selectedTab == "advanced_labs") { onTabSelect("advanced_labs") }
     }
 }
 

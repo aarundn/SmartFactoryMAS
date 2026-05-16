@@ -261,8 +261,8 @@ data class GanttState(
     val masOutput: MASOutput? = null,
     val multiMachineOutput: MultiMachineResultEvent? = null,
     val logs: List<LogEvent> = emptyList(),
-    val f1: Double = 0.0,
-    val f2: Double = 0.0,
-    val f: Double = 0.0,
+    val f1: Float = 0.0f,
+    val f2: Float = 0.0f,
+    val f: Float = 0.0f,
     val chosenArh: String = ""
 )
