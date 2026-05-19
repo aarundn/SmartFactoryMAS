@@ -229,7 +229,7 @@ private:
 
         std::vector<TBMBlock> emptyTBMs;
 
-        // ⏱️ MEASURE COMPUTATION TIME ⏱️
+        // ⏱️ MEASURE COMPUTATION TIME (Single) ⏱️
         auto startTime = std::chrono::high_resolution_clock::now();
 
         auto proposals = ams.handleAnomaly(
@@ -240,12 +240,29 @@ private:
         result.computationTimeMs = std::chrono::duration<double, std::milli>(
                 endTime - startTime).count();
 
-        // Calculate delay metrics
+        // ⏱️ MEASURE MULTI-MACHINE COORDINATION ⏱️
         if (!proposals.empty()) {
             CBMProposal* best = &proposals[0];
             for (auto& prop : proposals) {
                 if (prop.f.prob < best->f.prob) best = &prop;
             }
+
+            auto tm0 = std::chrono::high_resolution_clock::now();
+            MultiMachineCoordinator coordinator;
+            
+            // Simplified baseline for neighbors
+            auto baseline = Scheduler::buildSchedule(0.0, jobs, -1.0, FuzzyNumber(0,0,0), emptyTBMs);
+            AMA ama_agent("AMA", baseline); 
+            AMV amv_agent("AMV", baseline);
+            
+            coordinator.negotiate(best->schedule, ama_agent, amv_agent);
+            auto tm1 = std::chrono::high_resolution_clock::now();
+            
+            // Re-assign computationTime to include the full MAS cycle if requested, 
+            // but for Table 4.6 we usually want them separated. 
+            // In this runner, we'll keep the single-machine time as primary 
+            // but log the multi-machine overhead.
+            double multiOverhead = std::chrono::duration<double, std::milli>(tm1 - tm0).count();
 
             result.cbmStartTime = best->cbmStart;
             result.cbmDuration = best->cbmDuration.prob;
