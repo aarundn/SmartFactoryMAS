@@ -104,23 +104,66 @@ private:
         std::vector<ScheduleBlock> bestSchedule;
         auto perm = jobs;
 
-        if (jobs.size() <= 8) {
+        // 🌟 الخيار الأول: للمقاسات الصغيرة جداً والاختبارات اليدوية (دقة 100%) 🌟
+        if (jobs.size() <= 5) {
             std::sort(perm.begin(), perm.end(), [](const auto& a, const auto& b){ return a.id < b.id; });
             do {
                 auto schedule = Scheduler::buildSchedule(schedulingStart, perm, prop.cbmStart, prop.cbmDuration, tbmBlocks);
                 double tardiness = 0;
+                int count = 0;
                 for (const auto& b : schedule) {
-                    if (b.type == "PRODUCTION") tardiness += std::max(0.0, b.end.prob - b.dueDate);
+                    if (b.type == "PRODUCTION") { tardiness += std::max(0.0, b.end.prob - b.dueDate); count++; }
                 }
-                if (tardiness < bestTardiness) {
-                    bestTardiness = tardiness;
+                double meanTardiness = (count > 0) ? tardiness / count : 0.0;
+
+                if (meanTardiness < bestTardiness) {
+                    bestTardiness = meanTardiness;
                     bestSchedule  = schedule;
                 }
             } while (std::next_permutation(perm.begin(), perm.end(), [](const auto& a, const auto& b){ return a.id < b.id; }));
 
-        } else {
+        }
+            // 🌟 الخيار الثاني: للمقاسات الأكاديمية الكبيرة (بحث محلي تكيفي سريع) 🌟
+        else {
             std::sort(perm.begin(), perm.end(), [](const auto& a, const auto& b){ return a.dueDate < b.dueDate; });
-            bestSchedule = Scheduler::buildSchedule(schedulingStart, perm, prop.cbmStart, prop.cbmDuration, tbmBlocks);
+
+            int iterations;
+            if (jobs.size() <= 20) {
+                iterations = 200;      // المهام القليلة
+            } else if (jobs.size() <= 50) {
+                iterations = 800;      // المهام المتوسطة
+            } else {
+                iterations = 1500;     // المهام الكبيرة
+            }
+
+            // 🔴 هنا حلقة for التي كانت تنقصك لكي يعمل الذكاء الاصطناعي 🔴
+            for (int iter = 0; iter < iterations; ++iter) {
+                auto currentPerm = perm;
+
+                // تبديل عشوائي لمهامتين في كل محاولة (عدا المحاولة الأولى)
+                if (currentPerm.size() > 1 && iter > 0) {
+                    int idx1 = rand() % currentPerm.size();
+                    int idx2 = rand() % currentPerm.size();
+                    std::swap(currentPerm[idx1], currentPerm[idx2]);
+                }
+
+                auto schedule = Scheduler::buildSchedule(schedulingStart, currentPerm, prop.cbmStart, prop.cbmDuration, tbmBlocks);
+
+                double tardiness = 0;
+                int count = 0;
+                for (const auto& b : schedule) {
+                    if (b.type == "PRODUCTION") { tardiness += std::max(0.0, b.end.prob - b.dueDate); count++; }
+                }
+
+                double meanTardiness = (count > 0) ? tardiness / count : 0.0;
+
+                // إذا وجدنا مساراً يوفر الوقت، نحفظه!
+                if (meanTardiness < bestTardiness) {
+                    bestTardiness = meanTardiness;
+                    bestSchedule = schedule;
+                    perm = currentPerm;
+                }
+            }
         }
 
         prop.schedule = bestSchedule;
@@ -139,7 +182,6 @@ private:
         double f2val = std::max(0.0, prop.cbmStart - alertTime);
         prop.f2 = FuzzyNumber(f2val, f2val, f2val);
 
-        // 🌟 FIX 1: Economic Multiplier to balance the scales! 🌟
         prop.f  = (prop.f1 * w1 ) + (prop.f2 * w2);
 
         jsonLog("AMS", prop.arhId + " | f=" + prop.f.str());

@@ -133,7 +133,7 @@ fun AdvancedAnalyticsLabScreen() {
                                 jobs      = factorySize.toInt() * 3,
                                 arhs      = selectedTechs,
                                 w1 = w1, w2 = w2,
-                                scenarios = 100
+                                scenarios = 25
                             )
 
                             // ── Generate Tableau 4.6 ──────────────────────
@@ -153,8 +153,8 @@ fun AdvancedAnalyticsLabScreen() {
                             )
 
                             for ((m0, m1, m4) in configs) {
-                                val som = domain.runBatchSimulationCLI(m0, m1, m4, 0.3, 0.7, 100)
-                                val sop = domain.runBatchSimulationCLI(m0, m1, m4, 0.7, 0.3, 100)
+                                val som = domain.runBatchSimulationCLI(m0, m1, m4, 0.3, 0.7, 25)
+                                val sop = domain.runBatchSimulationCLI(m0, m1, m4, 0.7, 0.3, 25)
                                 new46.add(buildTable46Row(m0, m1, m4, som, sop))
                             }
                             table46Data = new46
@@ -164,8 +164,8 @@ fun AdvancedAnalyticsLabScreen() {
                             // averages; vary only m4.
                             val new47 = mutableListOf<Table47Row>()
                             for (m4 in listOf(2, 4, 8)) {
-                                val som = domain.runBatchSimulationCLI(20, 60, m4, 0.3, 0.7, 100)
-                                val sop = domain.runBatchSimulationCLI(20, 60, m4, 0.7, 0.3, 100)
+                                val som = domain.runBatchSimulationCLI(20, 60, m4, 0.3, 0.7, 25)
+                                val sop = domain.runBatchSimulationCLI(20, 60, m4, 0.7, 0.3, 25)
                                 new47.add(buildTable47Row(m4, som, sop))
                             }
                             table47Data = new47

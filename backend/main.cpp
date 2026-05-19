@@ -117,10 +117,13 @@ static std::string splitJson(const SplitMetrics& s) {
     return j.str();
 }
 
+#include <ctime>
+
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN ENTRY POINT
 // ══════════════════════════════════════════════════════════════════════════════
 int main() {
+    srand(static_cast<unsigned>(time(nullptr)));
     std::string input;
     std::ostringstream buf;
     buf << std::cin.rdbuf();
