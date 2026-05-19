@@ -160,12 +160,12 @@ fun AdvancedAnalyticsLabScreen() {
                             table46Data = new46
 
                             // ── Generate Tableau 4.7 ──────────────────────
-                            // Standardised on (m0=20, m1=60) to get stable
-                            // averages; vary only m4.
+                            // Uses Taillard benchmark group ta031-ta040 
+                            // (50 jobs) for deterministic results; vary m4.
                             val new47 = mutableListOf<Table47Row>()
                             for (m4 in listOf(2, 4, 8)) {
-                                val som = domain.runBatchSimulationCLI(20, 60, m4, 0.3, 0.7, 25)
-                                val sop = domain.runBatchSimulationCLI(20, 60, m4, 0.7, 0.3, 25)
+                                val som = domain.runBatchSimulationCLI(20, 50, m4, 0.3, 0.7, 25)
+                                val sop = domain.runBatchSimulationCLI(20, 50, m4, 0.7, 0.3, 25)
                                 new47.add(buildTable47Row(m4, som, sop))
                             }
                             table47Data = new47
