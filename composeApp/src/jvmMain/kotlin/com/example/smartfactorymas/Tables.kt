@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -78,10 +79,12 @@ fun FullTableau46(rows: List<Table46Row>) {
     val altRowBg    = Color(0xFFFAFAFA)
     val boldCellBg  = Color(0xFFFFF3CD)  // highlight "cases grasses"
 
+    val scope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
+            .horizontalScroll(scrollState)
             .border(1.dp, border)
     ) {
         // ── Title ────────────────────────────────────────────────────────
@@ -208,10 +211,12 @@ fun FullTableau47(rows: List<Table47Row>) {
     val border   = Color(0xFFCCCCCC)
     val headerBg = Color(0xFFF0F0F0)
 
+    val scope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
+            .horizontalScroll(scrollState)
             .border(1.dp, border)
     ) {
         Text(

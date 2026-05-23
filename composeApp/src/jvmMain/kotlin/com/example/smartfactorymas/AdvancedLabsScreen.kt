@@ -4,30 +4,59 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.smartfactorymas.*
+import com.example.smartfactorymas.BatchResultEvent
+import com.example.smartfactorymas.FullTableau46
+import com.example.smartfactorymas.FullTableau47
+import com.example.smartfactorymas.SimulationDomain
+import com.example.smartfactorymas.Table46Row
+import com.example.smartfactorymas.Table47Row
+import com.example.smartfactorymas.buildTable46Row
+import com.example.smartfactorymas.buildTable47Row
+import com.example.smartfactorymas.getEmptyTable46Data
+import com.example.smartfactorymas.getEmptyTable47Data
+import com.example.smartfactorymas.keyboardAndCursorScroll
 import kotlinx.coroutines.launch
 
 // ─── Colour palette ───────────────────────────────────────────────────────────
@@ -79,10 +108,12 @@ fun AdvancedAnalyticsLabScreen() {
     var anomalyNodeId  by remember { mutableStateOf(4) }
     val affectedNodes  = listOf(anomalyNodeId + 1, anomalyNodeId + 2)
 
+    val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
+            .keyboardAndCursorScroll(scrollState, scope)
     ) {
         // ── Page title ────────────────────────────────────────────────────
         Text("Advanced Analytics Lab",
@@ -96,29 +127,14 @@ fun AdvancedAnalyticsLabScreen() {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // Left 40 %
-            Column(
-                modifier = Modifier.weight(0.40f),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
-            ) {
-                FactoryNodeMap(anomalyNodeId, affectedNodes)
-                FocusedTimelineView()
-            }
 
             // Right 60 %
             Column(
                 modifier = Modifier.weight(0.60f),
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                ScenarioConfigCard(
-                    factorySize      = factorySize,
-                    onSizeChange     = { factorySize = it },
-                    selectedTechs    = selectedTechs,
-                    onTechsChange    = { selectedTechs = it },
-                    strategyIsSOM    = strategyIsSOM,
-                    onStrategyChange = { strategyIsSOM = it },
-                    isSimulating     = isSimulating,
-                    onRunClick = {
+
+                    Button(onClick ={
                         scope.launch {
                             isSimulating = true
                             table46Data  = getEmptyTable46Data()
@@ -160,7 +176,7 @@ fun AdvancedAnalyticsLabScreen() {
                             table46Data = new46
 
                             // ── Generate Tableau 4.7 ──────────────────────
-                            // Uses Taillard benchmark group ta031-ta040 
+                            // Uses Taillard benchmark group ta031-ta040
                             // (50 jobs) for deterministic results; vary m4.
                             val new47 = mutableListOf<Table47Row>()
                             for (m4 in listOf(2, 4, 8)) {
@@ -172,8 +188,13 @@ fun AdvancedAnalyticsLabScreen() {
 
                             isSimulating = false
                         }
+                    }, enabled = !isSimulating,
+                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
+                        shape  = RoundedCornerShape(8.dp)) {
+                        Text(if (isSimulating) "⏳ Simulating…" else "⚗ Run Benchmark",
+                            fontSize = 12.sp)
                     }
-                )
+
 
                 StabilityReactivityPanel(batchResult, isSimulating)
                 StrategicInsightCard(batchResult, isSimulating)
@@ -198,58 +219,7 @@ fun AdvancedAnalyticsLabScreen() {
     }
 }
 
-// ─── Factory Node Map ─────────────────────────────────────────────────────────
-@Composable
-fun FactoryNodeMap(anomalyNodeId: Int, affectedNodes: List<Int>) {
-    Card(
-        colors       = CardDefaults.cardColors(containerColor = AppColors.Surface),
-        border       = BorderStroke(1.dp, AppColors.Outline),
-        modifier     = Modifier.fillMaxWidth().height(200.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Factory Node Map", fontWeight = FontWeight.Bold)
-                NodeBadge("LIVE", AppColors.Secondary)
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment     = Alignment.CenterVertically
-            ) {
-                NodeCircle("3",  AppColors.TextMuted)
-                Text(" → ", color = AppColors.TextMuted)
-                NodeCircle(anomalyNodeId.toString(), AppColors.Error, filled = true)
-                Text(" ⇢ ", color = AppColors.Warning, fontWeight = FontWeight.Bold)
-                NodeCircle(affectedNodes[0].toString(), AppColors.Warning)
-                Text(" ⇢ ", color = AppColors.Warning, fontWeight = FontWeight.Bold)
-                NodeCircle(affectedNodes[1].toString(), AppColors.Warning)
-                Text(" → ", color = AppColors.TextMuted)
-                NodeCircle("…",  AppColors.TextMuted)
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            Divider(color = AppColors.Outline)
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                LegendDot("Anomaly",  AppColors.Error,   filled = true)
-                LegendDot("Affected", AppColors.Warning, filled = false)
-            }
-        }
-    }
-}
 
-@Composable
-private fun NodeCircle(label: String, color: Color, filled: Boolean = false) {
-    Box(
-        modifier = Modifier.size(36.dp).clip(CircleShape)
-            .background(if (filled) color else Color.Transparent)
-            .border(2.dp, color, CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(label, color = if (filled) Color.White else color,
-            fontWeight = FontWeight.Bold, fontSize = 12.sp)
-    }
-}
 
 @Composable
 private fun LegendDot(label: String, color: Color, filled: Boolean) {
@@ -267,133 +237,6 @@ private fun NodeBadge(text: String, color: Color) {
     Box(modifier = Modifier.border(1.dp, color, RoundedCornerShape(12.dp))
         .padding(horizontal = 8.dp, vertical = 2.dp)) {
         Text(text, color = color, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-// ─── Focused Timeline View ────────────────────────────────────────────────────
-@Composable
-fun FocusedTimelineView() {
-    Card(
-        colors   = CardDefaults.cardColors(containerColor = AppColors.Surface),
-        border   = BorderStroke(1.dp, AppColors.Outline),
-        modifier = Modifier.fillMaxWidth().height(220.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
-            Text("Focused Timeline View", fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(12.dp))
-            Canvas(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                val lH = size.height / 4f
-                val bH = lH * 0.6f
-                // M3
-                drawRoundRect(color = AppColors.Primary.copy(.2f), topLeft = Offset(0f, 0f),
-                    size = Size(size.width * .4f, bH), cornerRadius = CornerRadius(4.dp.toPx()))
-                // M4 anomaly
-                drawRect(color = AppColors.Error.copy(.05f), topLeft = Offset(0f, lH),
-                    size = Size(size.width, lH))
-                drawRoundRect(color = AppColors.Error, topLeft = Offset(size.width * .3f, lH + 4.dp.toPx()),
-                    size = Size(size.width * .2f, bH), cornerRadius = CornerRadius(4.dp.toPx()))
-                drawLine(AppColors.Error, Offset(size.width * .4f, lH + bH),
-                    Offset(size.width * .4f, lH * 2f), 3f,
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f)))
-                // M5
-                drawRoundRect(color = AppColors.Warning.copy(.5f),
-                    topLeft = Offset(size.width * .4f, lH * 2f),
-                    size = Size(size.width * .3f, bH), cornerRadius = CornerRadius(4.dp.toPx()))
-                // M6
-                drawRoundRect(color = AppColors.Primary.copy(.2f),
-                    topLeft = Offset(size.width * .7f, lH * 3f),
-                    size = Size(size.width * .3f, bH), cornerRadius = CornerRadius(4.dp.toPx()))
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("08:00", fontSize = 10.sp, color = AppColors.TextMuted)
-                Text("View: T-1h to T+4h", fontSize = 10.sp, color = AppColors.TextMuted,
-                    fontWeight = FontWeight.Bold)
-                Text("13:00", fontSize = 10.sp, color = AppColors.TextMuted)
-            }
-        }
-    }
-}
-
-// ─── Scenario Config Card ─────────────────────────────────────────────────────
-@Composable
-fun ScenarioConfigCard(
-    factorySize: Float, onSizeChange: (Float) -> Unit,
-    selectedTechs: Int, onTechsChange: (Int) -> Unit,
-    strategyIsSOM: Boolean, onStrategyChange: (Boolean) -> Unit,
-    isSimulating: Boolean, onRunClick: () -> Unit
-) {
-    Card(
-        colors   = CardDefaults.cardColors(containerColor = AppColors.Surface),
-        border   = BorderStroke(1.dp, AppColors.Outline),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Scenario Configurator", fontWeight = FontWeight.Bold)
-                Button(onClick = onRunClick, enabled = !isSimulating,
-                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
-                    shape  = RoundedCornerShape(8.dp)) {
-                    Text(if (isSimulating) "⏳ Simulating…" else "⚗ Run Benchmark",
-                        fontSize = 12.sp)
-                }
-            }
-
-            // Factory size
-            Column {
-                Row(modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("FACTORY SIZE", fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                        color = AppColors.TextMuted)
-                    Text("${factorySize.toInt()} Nodes", fontSize = 12.sp, color = AppColors.Primary)
-                }
-                Slider(value = factorySize, onValueChange = onSizeChange, valueRange = 5f..20f)
-            }
-
-            // Strategy toggle
-            Row(modifier = Modifier.fillMaxWidth()
-                .background(AppColors.Background, RoundedCornerShape(8.dp)).padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("STRATEGY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = AppColors.TextMuted)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("SOP", fontSize = 12.sp,
-                        color = if (!strategyIsSOM) AppColors.TextMain else AppColors.TextMuted)
-                    Spacer(Modifier.width(8.dp))
-                    Switch(checked = strategyIsSOM, onCheckedChange = onStrategyChange,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor  = AppColors.Primary,
-                            checkedTrackColor  = AppColors.Primary.copy(alpha = 0.3f)))
-                    Spacer(Modifier.width(8.dp))
-                    Text("SOM", fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                        color = if (strategyIsSOM) AppColors.TextMain else AppColors.TextMuted)
-                }
-            }
-
-            // Technician segmented control
-            Column {
-                Text("MAINTENANCE ROSTER", fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                    color = AppColors.TextMuted)
-                Spacer(Modifier.height(6.dp))
-                Row(modifier = Modifier.fillMaxWidth()
-                    .border(1.dp, AppColors.Outline, RoundedCornerShape(8.dp))
-                    .clip(RoundedCornerShape(8.dp))) {
-                    listOf(2, 4, 8).forEach { t ->
-                        val sel = selectedTechs == t
-                        Box(modifier = Modifier.weight(1f)
-                            .background(if (sel) AppColors.Primary.copy(.10f) else Color.Transparent)
-                            .clickable { onTechsChange(t) }.padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center) {
-                            Text("$t Techs", fontSize = 12.sp,
-                                fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
-                                color = if (sel) AppColors.Primary else AppColors.TextMuted)
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 

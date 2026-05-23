@@ -21,6 +21,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import com.example.smartfactorymas.keyboardAndCursorScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -50,6 +52,7 @@ import java.time.format.DateTimeFormatter
 
 @Composable
 fun CommunicationLog(logs: List<LogEvent>, modifier: Modifier = Modifier) {
+    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     LaunchedEffect(logs.size) { if (logs.isNotEmpty()) { delay(100); listState.animateScrollToItem(logs.size - 1) } }
 
@@ -69,7 +72,8 @@ fun CommunicationLog(logs: List<LogEvent>, modifier: Modifier = Modifier) {
         }
 
         LazyColumn(state = listState,
-            modifier = Modifier.fillMaxSize().background(SurfaceBright).padding(12.dp),
+            modifier = Modifier.fillMaxSize().background(SurfaceBright).padding(12.dp)
+                .keyboardAndCursorScroll(listState, scope),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(logs) { event ->
                 val isMsg = event.msg.contains("M_MESSAGE") || event.msg.contains("I_MESSAGE")

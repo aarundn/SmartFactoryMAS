@@ -340,7 +340,8 @@ fun MainScreen() {
                                 }
                             }
                             if (leftExpanded) {
-                                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                val localScrollState = rememberScrollState()
+                                Column(modifier = Modifier.verticalScroll(localScrollState).keyboardAndCursorScroll(localScrollState, scope)) {
                                     ControlPanel(
                                         strategy, { strategy = it }, w1, { w1 = it },
                                         anomalyTime, { anomalyTime = it }, schedulingStart, { schedulingStart = it },
@@ -411,7 +412,8 @@ fun MainScreen() {
                                 }
                             }
                             if (leftExpanded) {
-                                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                val globalScrollState = rememberScrollState()
+                                Column(modifier = Modifier.verticalScroll(globalScrollState).keyboardAndCursorScroll(globalScrollState, scope)) {
                                     MultiMachineControlPanel(
                                         mmState       = mmState,
                                         amaConfig     = amaConfig,

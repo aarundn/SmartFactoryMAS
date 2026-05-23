@@ -40,15 +40,28 @@ compose.desktop {
     application {
         mainClass = "com.example.smartfactorymas.MainKt"
 
-        // 🌟 ADD THIS BLOCK RIGHT HERE TO FIX THE BUILD ERROR 🌟
         buildTypes.release.proguard {
             isEnabled.set(false)
+        }
 
-            nativeDistributions {
-                targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-                packageName = "SmartFactoryMAS"
-                packageVersion = "1.0.0"
-                appResourcesRootDir.set(project.layout.projectDirectory.dir("appResources"))
+        nativeDistributions {
+            targetFormats(TargetFormat.Msi, TargetFormat.Exe)
+
+            packageName = "SmartFactoryMAS"
+            packageVersion = "1.0.0"
+            description = "Smart Factory Multi-Agent System"
+            vendor = "SmartFactoryMAS"
+            copyright = "© 2026 SmartFactoryMAS"
+
+            appResourcesRootDir.set(project.layout.projectDirectory.dir("appResources"))
+
+            windows {
+                menuGroup = "SmartFactoryMAS"
+                dirChooser = true
+                perUserInstall = true
+                shortcut = true
+                menu = true
+                upgradeUuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
             }
         }
     }

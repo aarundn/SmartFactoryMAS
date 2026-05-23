@@ -188,32 +188,40 @@ object CliInterop {
     //  Executable resolution
     // ══════════════════════════════════════════════════════════════════════════
     private fun resolveExePath(): File {
-        val absolute = File(
-            "C:\\Users\\HP\\AndroidStudioProjects\\SmartFactoryMAS2\\backend\\core_engine.exe"
-        )
-        if (absolute.exists()) return absolute
-
+        // 1. Bundled resources (works in packaged MSI/EXE installs)
         val resourcesDir = System.getProperty("compose.application.resources.dir")
         if (resourcesDir != null) {
             val f = File(resourcesDir, "core_engine.exe")
-            if (f.exists()) return f
+            if (f.exists()) {
+                println("🔧 [Engine] Found in bundled resources: ${f.absolutePath}")
+                return f
+            }
         }
 
+        // 2. Relative paths from working directory (works in dev/IDE mode)
         var dir = File(System.getProperty("user.dir"))
         if (dir.name == "composeApp") dir = dir.parentFile ?: dir
 
         val candidates = listOf(
-            "backend/core_engine.exe",
             "backend/build/core_engine.exe",
+            "backend/core_engine.exe",
             "build/core_engine.exe",
             "build_mas/core_engine.exe",
             "core_engine.exe"
         )
         for (rel in candidates) {
             val f = File(dir, rel)
-            if (f.exists()) return f
+            if (f.exists()) {
+                println("🔧 [Engine] Found at relative path: ${f.absolutePath}")
+                return f
+            }
         }
 
+        // 3. Last resort: hardcoded dev path
+        val absolute = File(
+            "C:\\Users\\HP\\AndroidStudioProjects\\SmartFactoryMAS2\\backend\\build\\core_engine.exe"
+        )
+        println("🔧 [Engine] Falling back to hardcoded path: ${absolute.absolutePath} (exists=${absolute.exists()})")
         return absolute
     }
 }
